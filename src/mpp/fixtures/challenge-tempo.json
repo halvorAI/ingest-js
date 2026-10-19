@@ -1,0 +1,12 @@
+{
+  "id": "ch_tempo_01abc",
+  "realm": "api.example.com",
+  "method": "tempo",
+  "intent": "charge",
+  "description": "Premium photo generation",
+  "request": {
+    "amount": "1000000",
+    "currency": "0x20c0000000000000000000000000000000000001",
+    "recipient": "0x742d35Cc6634C0532925a3b844Bc9e7595f8fE00"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2023", "lib": ["ES2023"], "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true, "isolatedModules": true, "skipLibCheck": true, "noEmit": true,
+    "types": ["node"], "baseUrl": ".",
+    "paths": {
+      "@halvorai/schema": ["./vendor/schema/index.ts"],
+      "@halvorai/schema/canonical": ["./vendor/schema/canonical.ts"],
+      "@halvorai/packs/verify": ["./vendor/packs/verify.ts"]
+    }
+  },
+  "include": ["src", "vendor"]
+}

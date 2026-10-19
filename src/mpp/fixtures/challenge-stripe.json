@@ -1,0 +1,11 @@
+{
+  "id": "ch_stripe_01xyz",
+  "realm": "api.example.com",
+  "method": "stripe",
+  "intent": "charge",
+  "description": "SPT card charge",
+  "request": {
+    "amount": "0.50",
+    "currency": "usd"
+  }
+}

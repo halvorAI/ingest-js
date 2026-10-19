@@ -1,0 +1,46 @@
+{
+  "name": "@halvorai/ingest",
+  "version": "0.1.0",
+  "description": "Signed, attributed payment events for AI agents. Never in the payment path.",
+  "type": "module",
+  "author": "HalvorAI <hello@halvorai.com>",
+  "license": "Apache-2.0",
+  "homepage": "https://docs.halvorai.com/sdks/typescript/",
+  "repository": { "type": "git", "url": "git+https://github.com/halvorai/ingest-js.git" },
+  "bugs": { "url": "https://github.com/halvorai/ingest-js/issues" },
+  "keywords": ["ai-agents", "agentic-payments", "x402", "ap2", "stripe", "mcp", "aml", "payments", "know-your-agent"],
+  "bin": { "halvorai-ingest": "./dist/bin.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./cli": { "types": "./dist/cli.d.ts", "default": "./dist/cli.js" },
+    "./stripe": { "types": "./dist/stripe.d.ts", "default": "./dist/stripe.js" },
+    "./x402": { "types": "./dist/x402.d.ts", "default": "./dist/x402.js" },
+    "./mpp": { "types": "./dist/mpp.d.ts", "default": "./dist/mpp.js" },
+    "./mcp": { "types": "./dist/mcp.d.ts", "default": "./dist/mcp.js" },
+    "./evidence": { "types": "./dist/evidence.d.ts", "default": "./dist/evidence.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
+  "sideEffects": false,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p .",
+    "smoke": "node scripts/smoke.mjs",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run smoke"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "jose": "^6.2.12",
+    "ulid": "^3.0.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0"
+  },
+  "publishConfig": { "access": "public", "provenance": true }
+}
