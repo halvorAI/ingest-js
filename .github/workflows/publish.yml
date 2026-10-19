@@ -2,6 +2,7 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_dispatch: # re-run a failed release without recreating it
 permissions:
   contents: read
   id-token: write # npm provenance and trusted publishing
@@ -18,7 +19,9 @@ jobs:
           cache: npm
       - run: npm install -g npm@latest # trusted publishing needs npm 11.5+
       - run: npm ci
+      - run: npm run build # dist/ must exist before npm checks the bin entry
       - name: Check tag matches package version
+        if: github.event_name == 'release'
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
       - run: npm publish --provenance --access public
         env:
