@@ -7,7 +7,8 @@ import { join, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (cmd, args, cwd) =>
-  execFileSync(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], shell: process.platform === 'win32' }).toString().trim();
+  // npm.cmd needs a shell on Windows; node (often under "Program Files") must not go through one.
+  execFileSync(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], shell: process.platform === 'win32' && cmd === npm }).toString().trim();
 
 const work = mkdtempSync(join(tmpdir(), 'halvorai-smoke-'));
 try {

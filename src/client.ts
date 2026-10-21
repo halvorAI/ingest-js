@@ -13,7 +13,7 @@ import { redactDeep, redactText, type RedactOptions } from './redact.js';
 import { createSpool, type SpoolEnvelope, type SpoolStore } from './spool.js';
 import { postEvents, type SignedEnvelope } from './transport.js';
 
-const SDK_NAME = '@halvorai/ingest@0.1.0';
+const SDK_NAME = '@halvorai/ingest@0.2.0';
 const DEFAULT_BATCH = 100;
 const DEFAULT_FLUSH_MS = 1000;
 const DEFAULT_RETRY_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000];
@@ -211,6 +211,7 @@ export class HalvorClient {
       this.apiKey = apiKey;
       this.endpoint =
         options.endpoint ??
+        process.env['HALVOR_ENDPOINT'] ??
         (keyEnv.env === 'live' ? 'https://api.halvorai.com' : 'https://api.sandbox.halvorai.com');
       this.environment = options.environment ?? keyEnv.env;
     }

@@ -6,6 +6,25 @@ import { HalvorClient } from '../client.js';
 
 const DASHBOARD_URL = 'https://app.halvorai.com';
 
+/**
+ * The dashboard that belongs to an API endpoint: the hosted API maps to app.halvorai.com, a local
+ * API on :8787 to the local dashboard on :3000, and `api.<host>` to `app.<host>`.
+ */
+export function dashboardFor(endpoint: string): string {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return DASHBOARD_URL;
+  }
+  if (url.hostname === 'api.halvorai.com' || url.hostname === 'api.sandbox.halvorai.com') {
+    return DASHBOARD_URL;
+  }
+  if (url.port === '8787') return `${url.protocol}//${url.hostname}:3000`;
+  if (url.hostname.startsWith('api.')) return `${url.protocol}//app.${url.hostname.slice(4)}`;
+  return url.origin;
+}
+
 export interface InitOptions {
   /** API key (`hk_test_…` or `hk_live_…`). */
   apiKey: string;
@@ -15,6 +34,8 @@ export interface InitOptions {
   endpoint?: string;
   /** Source display name (default: hostname). */
   name?: string;
+  /** Dashboard origin for the printed link (default: derived from the endpoint). */
+  dashboard?: string;
   /** Injected fetch for tests. */
   fetch?: typeof fetch;
   /** Optional log sink (default: console.log). */
@@ -115,6 +136,8 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   upsertEnvFile(envPath, {
     HALVOR_API_KEY: options.apiKey,
     HALVOR_SOURCE_KEY: JSON.stringify(privateJwk),
+    // Saved only when chosen, so a later `new HalvorClient()` talks to the same API.
+    ...(options.endpoint === undefined ? {} : { HALVOR_ENDPOINT: endpoint }),
   });
   log(`Wrote ${envPath}`);
 
@@ -157,10 +180,11 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     throw new Error(`test event was not accepted: ${errors.join('; ') || 'flush timed out'}`);
   }
 
-  const dashboardUrl = DASHBOARD_URL;
+  const dashboard = (options.dashboard ?? dashboardFor(endpoint)).replace(/\/+$/, '');
+  const dashboardUrl = `${dashboard}/payments?event=${encodeURIComponent(eventId)}`;
   log('');
   log(`Source ${sourceId} is ready.`);
-  log(`Open the dashboard: ${dashboardUrl}`);
+  log(`See it in the dashboard: ${dashboardUrl}`);
   log(`First event id: ${eventId}`);
 
   return { sourceId, eventId, envPath, dashboardUrl, endpoint, environment };

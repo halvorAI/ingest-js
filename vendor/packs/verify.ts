@@ -489,9 +489,6 @@ export async function verifyPack(
   if (environments.size > 1) report.failures.push('Included events span multiple environments');
   const environment = [...environments][0];
   const jwks = jwksFrom(keys);
-  if (sortedChain.length > 0 && chain.anchors.length === 0) {
-    report.failures.push('No daily anchor covers the included events');
-  }
   const lastIncluded = sortedChain.at(-1);
   const hasCoveringAnchor =
     lastIncluded === undefined ||
@@ -500,7 +497,7 @@ export async function verifyPack(
         /^(0|[1-9][0-9]*)$/.test(anchor.last_chain_seq) &&
         BigInt(anchor.last_chain_seq) >= BigInt(lastIncluded.chain_seq),
     );
-  if (!hasCoveringAnchor) report.failures.push('No daily anchor covers the included events');
+  if (!hasCoveringAnchor) report.failures.push('No chain anchor covers the included events');
   for (const anchor of chain.anchors) {
     if (environment === undefined) {
       report.failures.push(`Anchor ${anchor.date} cannot be tied to an event environment`);

@@ -4,16 +4,17 @@ import { stdin as input, stdout as output } from 'node:process';
 import { runInit } from './init.js';
 import { runVerifyPack } from './verify-pack.js';
 
-function usage(): never {
+function usage(code = 2): never {
   console.log(`Usage:
-  npx @halvorai/ingest init [--api-key hk_test_…] [--endpoint URL] [--name NAME] [--cwd DIR]
+  npx @halvorai/ingest init [--api-key hk_test_…] [--endpoint URL] [--dashboard URL] [--name NAME] [--cwd DIR]
   npx @halvorai/ingest verify-pack <pack.zip> [--jwks FILE_OR_URL]
 
-init registers a source key, writes .env.local, and sends one test event.
+init registers a source key, writes .env.local (with HALVOR_ENDPOINT when --endpoint is given),
+and sends one test event.
 verify-pack verifies an evidence pack locally. If --jwks is omitted, it fetches the
 JWKS URL named by the signed manifest; pass a pinned JWK or JWKS file for offline use.
 `);
-  process.exit(2);
+  process.exit(code);
 }
 
 function argValue(argv: string[], name: string): string | undefined {
@@ -39,8 +40,9 @@ async function promptApiKey(): Promise<string> {
 }
 
 async function main(argv: string[]): Promise<void> {
-  const command = argv[0] ?? 'help';
-  if (command === 'help' || command === '--help' || command === '-h') usage();
+  const command = argv[0];
+  if (command === undefined) usage();
+  if (command === 'help' || command === '--help' || command === '-h') usage(0);
   if (command === 'verify-pack') {
     const rest = argv.slice(1);
     const zipPath = rest[0];
@@ -62,13 +64,15 @@ async function main(argv: string[]): Promise<void> {
   const apiKey =
     argValue(rest, '--api-key') ?? process.env['HALVOR_API_KEY'] ?? (await promptApiKey());
 
-  const endpoint = argValue(rest, '--endpoint');
+  const endpoint = argValue(rest, '--endpoint') ?? process.env['HALVOR_ENDPOINT'];
+  const dashboard = argValue(rest, '--dashboard');
   const name = argValue(rest, '--name');
   const cwd = argValue(rest, '--cwd');
   await runInit({
     apiKey,
     ...(endpoint === undefined ? {} : { endpoint }),
     ...(name === undefined ? {} : { name }),
+    ...(dashboard === undefined ? {} : { dashboard }),
     ...(cwd === undefined ? {} : { cwd }),
   });
 }
