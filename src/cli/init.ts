@@ -8,7 +8,7 @@ const DASHBOARD_URL = 'https://app.halvorai.com';
 
 /**
  * The dashboard that belongs to an API endpoint: the hosted API maps to app.halvorai.com, a local
- * API on :8787 to the local dashboard on :3000, and `api.<host>` to `app.<host>`.
+ * API on :8787 to the local dashboard on localhost:3000, and `api.<host>` to `app.<host>`.
  */
 export function dashboardFor(endpoint: string): string {
   let url: URL;
@@ -20,7 +20,12 @@ export function dashboardFor(endpoint: string): string {
   if (url.hostname === 'api.halvorai.com' || url.hostname === 'api.sandbox.halvorai.com') {
     return DASHBOARD_URL;
   }
-  if (url.port === '8787') return `${url.protocol}//${url.hostname}:3000`;
+  // The local dashboard is served (and signed in to) at localhost:3000, whatever loopback name the
+  // API was given; a session cookie for localhost is not sent to 127.0.0.1.
+  if (url.port === '8787') {
+    const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    return `${url.protocol}//${loopback ? 'localhost' : url.hostname}:3000`;
+  }
   if (url.hostname.startsWith('api.')) return `${url.protocol}//app.${url.hostname.slice(4)}`;
   return url.origin;
 }
