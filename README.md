@@ -14,6 +14,8 @@ Signed, attributed payment events for AI agents. HalvorAI records each payment a
 npm install @halvorai/ingest
 ```
 
+The offline example below also uses `jose` to make a key: `npm install @halvorai/ingest jose`.
+
 ## Try it offline
 
 No account needed. Events are signed with your own Ed25519 key and handed to your `sink` instead of the API.
@@ -65,7 +67,7 @@ With a sandbox key (`hk_test_…`):
 npx @halvorai/ingest init --api-key hk_test_…
 ```
 
-`init` creates a source key pair, registers the public half, writes `HALVOR_API_KEY` and `HALVOR_SOURCE_KEY` to `.env.local`, and sends one test event. Then `new HalvorClient()` reads both from the environment.
+`init` creates a source key pair, registers the public half, writes `HALVOR_API_KEY` and `HALVOR_SOURCE_KEY` (and `HALVOR_ENDPOINT` when you pass `--endpoint`) to `.env.local`, sends one test event and prints a dashboard link that opens it. Then `new HalvorClient()` reads them from the environment.
 
 ## Rails
 

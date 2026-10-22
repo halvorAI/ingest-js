@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+- `init` prints a dashboard link that opens the test event (`<dashboard>/payments?event=…`), derived from the endpoint or set with `--dashboard`. It printed a fixed `https://app.halvorai.com` before.
+- `init --endpoint URL` saves `HALVOR_ENDPOINT` to `.env.local`, and `HalvorClient` reads `HALVOR_ENDPOINT` when no `endpoint` is passed.
+- `npx @halvorai/ingest --help` exits 0.
+- `verify-pack` reports a missing chain anchor once, as "No chain anchor covers the included events".
+
 ## 0.1.0 (developer preview)
 
 - `HalvorClient`: batched, signed (EdDSA) event delivery with retries and an optional disk spool; `emit` never throws.
