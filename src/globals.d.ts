@@ -1,0 +1,2 @@
+/** The package version, injected at build time from package.json. */
+declare const __SDK_VERSION__: string;

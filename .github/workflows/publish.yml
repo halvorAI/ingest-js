@@ -23,8 +23,5 @@ jobs:
       - name: Check tag matches package version
         if: github.event_name == 'release'
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+      # prepublishOnly runs typecheck, tests and smoke. Trusted publishing (OIDC): no token.
       - run: npm publish --provenance --access public
-        env:
-          # First release only: set the NPM_TOKEN secret. After that, configure trusted publishing on
-          # npmjs.com for this workflow and delete the secret; npm then authenticates with OIDC.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

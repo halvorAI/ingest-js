@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { evidenceSha256 } from '@halvorai/schema';
 import { currentContext } from '../context.js';
 
@@ -49,8 +50,8 @@ export type X402Adapter = 'x402-client' | 'x402-server';
 export interface MappedX402Event {
   type: string;
   source: { adapter: X402Adapter };
-  agent: { id: string };
-  owner: { id: string; type: 'person' | 'business' };
+  agent?: { id: string };
+  owner?: { id: string; type: 'person' | 'business' };
   payment: Record<string, unknown>;
   payee: Record<string, unknown>;
   instrument?: Record<string, unknown>;
@@ -75,12 +76,18 @@ function hostName(url: string | undefined): string | undefined {
   }
 }
 
+/** Throws when the network or asset is missing: guessing them would record wrong compliance data. */
 function assetOf(accept: X402Accept): Record<string, unknown> {
-  const network = accept.network ?? 'eip155:84532';
-  const address = accept.asset ?? '0x0000000000000000000000000000000000000000';
-  const symbol = accept.extra?.name ?? 'USDC';
-  const decimals = accept.extra?.decimals ?? 6;
-  return { network, address, symbol, decimals };
+  if (accept.network === undefined) {
+    throw new Error('x402 payment requirement has no network; event not recorded');
+  }
+  if (accept.asset === undefined) {
+    throw new Error('x402 payment requirement has no asset; event not recorded');
+  }
+  const asset: Record<string, unknown> = { network: accept.network, address: accept.asset };
+  if (accept.extra?.name !== undefined) asset['symbol'] = accept.extra.name.slice(0, 16);
+  if (accept.extra?.decimals !== undefined) asset['decimals'] = accept.extra.decimals;
+  return asset;
 }
 
 function amountOf(accept: X402Accept, override?: string): Record<string, unknown> {
@@ -91,18 +98,16 @@ function amountOf(accept: X402Accept, override?: string): Record<string, unknown
   };
 }
 
-function attribution(payerWallet?: string): {
-  agent: { id: string };
-  owner: { id: string; type: 'person' | 'business' };
-} {
+/**
+ * Agent and owner for a mapped event. When the caller set them with `withAgentContext`, they are
+ * left out so the client fills the full context (name, framework, country, …) at emit time.
+ */
+function attribution(payerWallet?: string): Pick<MappedX402Event, 'agent' | 'owner'> {
   const ctx = currentContext();
-  return {
-    agent: { id: ctx?.agent?.id ?? payerWallet ?? 'unattributed' },
-    owner: {
-      id: ctx?.owner?.id ?? 'unattributed',
-      type: ctx?.owner?.type ?? 'business',
-    },
-  };
+  const out: Pick<MappedX402Event, 'agent' | 'owner'> = {};
+  if (ctx?.agent === undefined) out.agent = { id: payerWallet ?? 'unattributed' };
+  if (ctx?.owner === undefined) out.owner = { id: 'unattributed', type: 'business' };
+  return out;
 }
 
 function payeeFromAccept(
@@ -144,7 +149,8 @@ export function mapPaymentRequired(
   if (accept === undefined) return undefined;
   const attr = attribution();
   const payment: Record<string, unknown> = {
-    payment_id: `x402:${accept.network ?? 'unknown'}:requested`,
+    // Each 402 challenge is its own payment request; the payer's nonce does not exist yet.
+    payment_id: `x402:${accept.network ?? 'unknown'}:requested:${randomUUID()}`,
     rail: 'x402',
     amount: amountOf(accept),
     status: 'requested',
@@ -156,8 +162,7 @@ export function mapPaymentRequired(
   return {
     type: 'payment.requested',
     source: { adapter },
-    agent: attr.agent,
-    owner: attr.owner,
+    ...attr,
     payment,
     payee: payeeFromAccept(accept, required.resource, payeeOverride),
     evidence: [],
@@ -190,8 +195,7 @@ export function mapPaymentPayload(
   const mapped: MappedX402Event = {
     type: 'payment.authorized',
     source: { adapter },
-    agent: attr.agent,
-    owner: attr.owner,
+    ...attr,
     payment,
     payee: payeeFromAccept(accept, payload.resource, payeeOverride),
     evidence: [
@@ -256,8 +260,7 @@ export function mapSettlementResponse(
   const mapped: MappedX402Event = {
     type: success ? 'payment.settled' : 'payment.failed',
     source: { adapter },
-    agent: attr.agent,
-    owner: attr.owner,
+    ...attr,
     payment,
     payee: payeeFromAccept(accept, context.resource, context.payeeOverride),
     evidence: [

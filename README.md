@@ -5,8 +5,8 @@ Signed, attributed payment events for AI agents. HalvorAI records each payment a
 > **Developer preview.** The SDK works offline today: build, sign and inspect events with your own sink. Sandbox API keys go to early-access teams. [Request access](https://halvorai.com/?utm_source=github&utm_campaign=ingest_js#early-access).
 
 - Docs: [docs.halvorai.com](https://docs.halvorai.com)
-- Event format: [Agent Payment Event (APE) v0.1](https://github.com/halvorai/ape-schema), open and Apache-2.0
-- Node.js 22 or later
+- Event format: [Agent Payment Event (APE) v0.1](https://schema.halvorai.com/ape/v0.1.json) ([source](https://github.com/halvorAI/ape-schema)), open and Apache-2.0
+- Node.js 22 or later. Node.js runtime only: not Edge or Cloudflare Workers.
 
 ## Install
 
@@ -69,6 +69,44 @@ npx @halvorai/ingest init --api-key hk_test_…
 
 `init` creates a source key pair, registers the public half, writes `HALVOR_API_KEY` and `HALVOR_SOURCE_KEY` (and `HALVOR_ENDPOINT` when you pass `--endpoint`) to `.env.local`, sends one test event and prints a dashboard link that opens it. Then `new HalvorClient()` reads them from the environment.
 
+## Make sure events are sent before your code stops
+
+`emit` queues events and sends them in the background about once a second. The client flushes on
+`beforeExit`, but that does not run on `process.exit()`, on SIGTERM or SIGINT, or when a serverless
+runtime freezes your function after the response. Pick the pattern for where you run:
+
+**Serverless and request handlers** (Vercel, Next.js route handlers, AWS Lambda): flush before the
+response ends, with a timeout so an API outage cannot hang the request.
+
+```ts
+// Next.js 15+ route handler (Node.js runtime)
+import { after } from 'next/server';
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  // … your agent pays, and you call halvor.emit(…)
+  after(() => halvor.flush({ timeoutMs: 5000 }));
+  return Response.json({ ok: true });
+}
+```
+
+On other platforms pass `halvor.flush({ timeoutMs: 5000 })` to `waitUntil`, or `await` it before
+returning. Without `timeoutMs`, `flush()` waits for the full retry schedule, about a minute per
+batch while the API is down.
+
+**Long-running servers and containers:** pass `signals: true` so the client flushes for up to 5 s
+on SIGTERM and SIGINT, then lets the process exit.
+
+```ts
+const halvor = new HalvorClient({ signals: true, spoolDir: '.halvor-spool' });
+```
+
+**Spool:** with `spoolDir`, events that cannot be delivered during an outage are written to disk
+and sent later, oldest first. The spool is capped at 50 MB and 7 days by default
+(`spoolMaxBytes`, `spoolMaxAgeMs`); the oldest files are evicted first and reported to `onError`.
+Events the API will never accept (for example a revoked source key) are kept in `<spoolDir>/dead/`
+and not retried.
+
 ## Rails
 
 | Import | What it does |
@@ -96,6 +134,7 @@ It checks the signatures, file hashes and hash chain offline.
 ```bash
 npm install
 npm run typecheck
+npm test        # unit tests, including the cross-language signing vector
 npm run build
 npm run smoke   # packs the tarball, installs it in an empty project, emits one event, runs the CLI
 ```

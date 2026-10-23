@@ -51,16 +51,10 @@ function mergeContext(outer: AgentContext | undefined, ctx: AgentContext): Agent
 
 /**
  * Run `fn` with an agent context. A nested call merges a partial context over the outer one
- * and restores the outer context when it returns. Synchronous throws become rejected promises
- * so `await expect(withAgentContext(...)).rejects` works for both sync and async callbacks.
+ * and restores the outer context when it returns. Returns whatever `fn` returns: a synchronous
+ * throw is thrown to the caller, and an async callback's rejection stays a rejected promise.
  */
 export function withAgentContext<T>(ctx: AgentContext, fn: () => T): T {
   const merged = mergeContext(storage.getStore(), ctx);
-  return storage.run(merged, () => {
-    try {
-      return fn();
-    } catch (err) {
-      return Promise.reject(err) as T;
-    }
-  });
+  return storage.run(merged, fn);
 }

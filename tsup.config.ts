@@ -1,6 +1,8 @@
 import { defineConfig } from 'tsup';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+const { version } = JSON.parse(readFileSync(r('./package.json'), 'utf8')) as { version: string };
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
@@ -13,6 +15,7 @@ export default defineConfig({
     evidence: 'src/evidence/index.ts',
   },
   format: ['esm'],
+  define: { __SDK_VERSION__: JSON.stringify(version) },
   target: 'node22',
   platform: 'node',
   dts: { entry: { index: 'src/index.ts', cli: 'src/cli/init.ts', stripe: 'src/stripe/index.ts', x402: 'src/x402/index.ts', mpp: 'src/mpp/index.ts', mcp: 'src/mcp/index.ts', evidence: 'src/evidence/index.ts' }, resolve: [/^@halvorai\//] },

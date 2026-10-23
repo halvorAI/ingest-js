@@ -10,14 +10,20 @@ import {
 import { currentContext, type AgentContext } from './context.js';
 import { hashInstruction } from './hash.js';
 import { redactDeep, redactText, type RedactOptions } from './redact.js';
-import { createSpool, type SpoolEnvelope, type SpoolStore } from './spool.js';
-import { postEvents, type SignedEnvelope } from './transport.js';
+import { createSpool, type SpoolLimits, type SpoolStore } from './spool.js';
+import { postEvents, type ServerError, type SignedEnvelope } from './transport.js';
 
-const SDK_NAME = '@halvorai/ingest@0.2.0';
+const SDK_NAME = `@halvorai/ingest@${__SDK_VERSION__}`;
 const DEFAULT_BATCH = 100;
 const DEFAULT_FLUSH_MS = 1000;
 const DEFAULT_RETRY_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000];
 const EXIT_FLUSH_MS = 2000;
+const SIGNAL_FLUSH_MS = 5000;
+
+/** Reads an environment variable without crashing in runtimes that have no `process`. */
+function env(name: string): string | undefined {
+  return typeof process !== 'undefined' ? process.env?.[name] : undefined;
+}
 
 export type SdkErrorCode =
   'invalid_event' | 'unauthorized' | 'delivery_failed' | 'rejected' | 'spool' | 'config';
@@ -28,6 +34,8 @@ export interface SdkError {
   eventId?: string;
   serverCode?: string;
   details?: unknown[];
+  /** The API's request id, to quote to support. */
+  requestId?: string;
 }
 
 export interface ClientStats {
@@ -52,13 +60,27 @@ export interface ClientOptions {
   endpoint?: string;
   sink?: (envelopes: SignedEnvelope[]) => void | Promise<void>;
   spoolDir?: string;
+  /** Spool size before the oldest files are evicted. Default 50 MB. */
+  spoolMaxBytes?: number;
+  /** Spooled files older than this are evicted. Default 7 days. */
+  spoolMaxAgeMs?: number;
   onError?: (error: SdkError) => void;
   redact?: RedactOptions;
   fetch?: typeof fetch;
   batchSize?: number;
   flushIntervalMs?: number;
   retryDelaysMs?: number[];
+  /**
+   * Flush on `beforeExit` (default true). This does not run on `process.exit()`, on signals or when
+   * a serverless runtime freezes the function: in request handlers, `await halvor.flush()` before
+   * responding, or pass `halvor.flush()` to the platform's `waitUntil`/`after`.
+   */
   exitHook?: boolean;
+  /**
+   * Flush (up to 5 s) on SIGTERM and SIGINT, then re-raise the signal so the process still exits.
+   * Opt in for long-running servers and containers. Default false.
+   */
+  signals?: boolean;
 }
 
 interface PendingRaw {
@@ -69,6 +91,12 @@ interface PendingRaw {
 
 interface ReadyItem extends SignedEnvelope {
   id: string;
+}
+
+interface Delivery {
+  /** Events to try again later. */
+  pending: ReadyItem[];
+  reason?: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -105,6 +133,7 @@ function parseSourceKey(raw: string | JWK | undefined): { jwk: JWK; kid: string 
   } else {
     jwk = raw;
   }
+  if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519') return null;
   if (typeof jwk.d !== 'string' || jwk.d.length === 0) return null;
   if (typeof jwk.kid !== 'string' || jwk.kid.length === 0) return null;
   return { jwk, kid: jwk.kid };
@@ -167,14 +196,15 @@ export class HalvorClient {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly flushIntervalMs: number;
   private exitHandler: (() => void) | null = null;
+  private signalHandler: ((signal: NodeJS.Signals) => void) | null = null;
   /** When set, interval drains skip spool replay until this time (avoids retry storms). */
   private spoolCooldownUntil = 0;
   private drainReplaySpool = true;
   private rerunDrain = false;
 
   constructor(options: ClientOptions = {}) {
-    const apiKey = options.apiKey ?? process.env['HALVOR_API_KEY'];
-    const sourceRaw = options.sourceKey ?? process.env['HALVOR_SOURCE_KEY'];
+    const apiKey = options.apiKey ?? env('HALVOR_API_KEY');
+    const sourceRaw = options.sourceKey ?? env('HALVOR_SOURCE_KEY');
     const parsed = parseSourceKey(sourceRaw);
     const keyEnv = typeof apiKey === 'string' ? parseApiKey(apiKey) : null;
 
@@ -184,10 +214,13 @@ export class HalvorClient {
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.batchSize = options.batchSize ?? DEFAULT_BATCH;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS;
-    this.spool = options.spoolDir ? createSpool(options.spoolDir) : undefined;
+    const spoolLimits: Partial<SpoolLimits> = {};
+    if (options.spoolMaxBytes !== undefined) spoolLimits.maxBytes = options.spoolMaxBytes;
+    if (options.spoolMaxAgeMs !== undefined) spoolLimits.maxAgeMs = options.spoolMaxAgeMs;
+    this.spool = options.spoolDir ? createSpool(options.spoolDir, spoolLimits) : undefined;
 
     if (!parsed) {
-      this.disable('source key is missing or is not a private JWK with kid');
+      this.disable('source key is missing or is not a private Ed25519 JWK (kty OKP, crv Ed25519) with a kid');
       this.sourceJwk = undefined;
       this.sourceId = undefined;
     } else {
@@ -211,7 +244,7 @@ export class HalvorClient {
       this.apiKey = apiKey;
       this.endpoint =
         options.endpoint ??
-        process.env['HALVOR_ENDPOINT'] ??
+        env('HALVOR_ENDPOINT') ??
         (keyEnv.env === 'live' ? 'https://api.halvorai.com' : 'https://api.sandbox.halvorai.com');
       this.environment = options.environment ?? keyEnv.env;
     }
@@ -223,6 +256,19 @@ export class HalvorClient {
         void this.flush({ timeoutMs: EXIT_FLUSH_MS });
       };
       process.once('beforeExit', this.exitHandler);
+    }
+
+    if (options.signals === true && typeof process !== 'undefined') {
+      const handler = (signal: NodeJS.Signals): void => {
+        process.off('SIGTERM', handler);
+        process.off('SIGINT', handler);
+        void this.flush({ timeoutMs: SIGNAL_FLUSH_MS, replaySpool: false }).finally(() => {
+          process.kill(process.pid, signal);
+        });
+      };
+      this.signalHandler = handler;
+      process.once('SIGTERM', handler);
+      process.once('SIGINT', handler);
     }
 
     // Replay any spool left by a previous process; in-memory queue is empty at construction.
@@ -241,7 +287,7 @@ export class HalvorClient {
       this.flushTimer = null;
       return this.kickDrain({ replaySpool: false });
     }, this.flushIntervalMs);
-    if (process.env['VITEST'] === undefined) this.flushTimer.unref?.();
+    if (env('VITEST') === undefined) this.flushTimer.unref?.();
   }
 
   stats(): ClientStats {
@@ -309,6 +355,11 @@ export class HalvorClient {
     }
   }
 
+  /**
+   * Sends everything queued. Without `timeoutMs` this waits for the full retry schedule (about
+   * a minute per batch while the API is down). In request handlers pass a timeout, for example
+   * `await halvor.flush({ timeoutMs: 5000 })`; undelivered events stay queued or spooled.
+   */
   async flush(
     options: { timeoutMs?: number; replaySpool?: boolean } = {},
   ): Promise<{ drained: boolean }> {
@@ -358,6 +409,11 @@ export class HalvorClient {
       process.off('beforeExit', this.exitHandler);
       this.exitHandler = null;
     }
+    if (this.signalHandler && typeof process !== 'undefined') {
+      process.off('SIGTERM', this.signalHandler);
+      process.off('SIGINT', this.signalHandler);
+      this.signalHandler = null;
+    }
   }
 
   async close(options: { timeoutMs?: number } = {}): Promise<void> {
@@ -390,7 +446,8 @@ export class HalvorClient {
 
       while (this.readyQueue.length > 0) {
         const batch = this.readyQueue.splice(0, this.batchSize);
-        await this.deliverBatch(batch, { reSpool: true });
+        const { pending, reason } = await this.deliverBatch(batch);
+        await this.park(pending, reason);
         await this.prepareReady();
       }
 
@@ -513,91 +570,136 @@ export class HalvorClient {
     }
   }
 
-  /** Returns true when the batch was accepted (or individually settled). */
-  private async deliverBatch(batch: ReadyItem[], options: { reSpool: boolean }): Promise<boolean> {
-    if (batch.length === 0) return true;
-
-    if (this.sink) {
-      return this.deliverViaSink(batch, options.reSpool);
-    }
-
-    return this.deliverViaHttp(batch, options.reSpool);
+  /**
+   * Sends one batch. Returns the events that should be tried again later (the API or sink was
+   * unavailable). Everything else is settled: accepted, duplicate, rejected by the server, or
+   * dropped because the API will never accept it.
+   */
+  private async deliverBatch(batch: ReadyItem[]): Promise<Delivery> {
+    if (batch.length === 0) return { pending: [] };
+    if (this.sink) return this.deliverViaSink(batch);
+    return this.deliverViaHttp(batch);
   }
 
-  private async deliverViaSink(batch: ReadyItem[], reSpool: boolean): Promise<boolean> {
+  private async deliverViaSink(batch: ReadyItem[]): Promise<Delivery> {
     const sink = this.sink;
-    if (!sink) return false;
+    if (!sink) return { pending: batch, reason: 'no sink' };
     const delays = this.retryDelaysMs;
     for (let attempt = 0; attempt <= delays.length; attempt++) {
       try {
         await sink(batch.map(({ event, sig }) => ({ event, sig })));
         this.statsInternal.accepted += batch.length;
-        return true;
+        return { pending: [] };
       } catch (err) {
         if (attempt >= delays.length) {
-          await this.failBatch(batch, err instanceof Error ? err.message : 'sink failed', reSpool);
-          return false;
+          return { pending: batch, reason: err instanceof Error ? err.message : 'sink failed' };
         }
         this.statsInternal.retries++;
         await sleep(withJitter(delays[attempt] ?? 1000));
       }
     }
-    return false;
+    return { pending: batch, reason: 'sink failed' };
   }
 
-  private async deliverViaHttp(batch: ReadyItem[], reSpool: boolean): Promise<boolean> {
+  private async deliverViaHttp(batch: ReadyItem[]): Promise<Delivery> {
     const endpoint = this.endpoint;
     const apiKey = this.apiKey;
-    if (!endpoint || !apiKey) return false;
+    if (!endpoint || !apiKey) return { pending: batch, reason: 'no endpoint' };
     const delays = this.retryDelaysMs;
-    const current = batch;
 
     for (let attempt = 0; attempt <= delays.length; attempt++) {
       const outcome = await postEvents(
         this.fetchImpl,
         endpoint,
         apiKey,
-        current.map(({ event, sig }) => ({ event, sig })),
+        batch.map(({ event, sig }) => ({ event, sig })),
       );
 
       if (outcome.kind === 'ok') {
-        this.applyResults(current, outcome.results);
-        return true;
+        this.applyResults(batch, outcome.results);
+        return { pending: [] };
       }
 
       if (outcome.kind === 'too_large') {
-        if (current.length === 1) {
-          await this.failBatch(current, 'payload too large', reSpool);
-          return false;
+        if (batch.length === 1) {
+          // One event the API will never take: retrying or spooling it cannot help.
+          await this.dropFatal(batch, 'delivery_failed', {
+            ...outcome.error,
+            code: outcome.error.code ?? 'payload_too_large',
+            message: 'event is larger than the API accepts',
+          });
+          return { pending: [] };
         }
-        const mid = Math.ceil(current.length / 2);
-        const left = current.slice(0, mid);
-        const right = current.slice(mid);
-        const a = await this.deliverViaHttp(left, reSpool);
-        const b = await this.deliverViaHttp(right, reSpool);
-        return a && b;
+        const mid = Math.ceil(batch.length / 2);
+        const left = await this.deliverViaHttp(batch.slice(0, mid));
+        const right = await this.deliverViaHttp(batch.slice(mid));
+        const pending = [...left.pending, ...right.pending];
+        const reason = right.reason ?? left.reason;
+        return reason === undefined ? { pending } : { pending, reason };
       }
 
       if (outcome.kind === 'fatal') {
         const code: SdkErrorCode =
           outcome.status === 401 || outcome.status === 403 ? 'unauthorized' : 'delivery_failed';
-        this.statsInternal.dropped += current.length;
-        this.report({
-          code,
-          message: outcome.message || `HTTP ${outcome.status}`,
-        });
-        return false;
+        await this.dropFatal(batch, code, outcome.error);
+        return { pending: [] };
       }
 
-      // retry
+      // retryable
       if (attempt >= delays.length) {
-        await this.failBatch(current, outcome.message, reSpool);
-        return false;
+        return { pending: batch, reason: outcome.error.message };
       }
       this.statsInternal.retries++;
       await sleep(withJitter(delays[attempt] ?? 1000));
     }
-    return false;
+    return { pending: batch, reason: 'delivery failed' };
+  }
+
+  /** Counts a batch the API will never accept as dropped, once, and keeps a copy in `dead/`. */
+  private async dropFatal(batch: ReadyItem[], code: SdkErrorCode, error: ServerError): Promise<void> {
+    this.statsInternal.dropped += batch.length;
+    const report: SdkError = { code, message: error.message };
+    if (error.code !== undefined) report.serverCode = error.code;
+    if (error.details !== undefined) report.details = error.details;
+    if (error.requestId !== undefined) report.requestId = error.requestId;
+    if (batch.length === 1 && batch[0]) report.eventId = batch[0].id;
+    this.report(report);
+    if (this.spool) {
+      try {
+        await this.spool.deadLetter(batch.map(({ event, sig }) => ({ event, sig })));
+      } catch (err) {
+        this.report({
+          code: 'spool',
+          message: err instanceof Error ? err.message : 'dead-letter write failed',
+        });
+      }
+    }
+  }
+
+  /** Spools events that could not be delivered now, or drops them loudly when there is no spool. */
+  private async park(pending: ReadyItem[], reason: string | undefined): Promise<void> {
+    if (pending.length === 0) return;
+    if (this.spool) {
+      try {
+        const evicted = await this.spool.write(pending.map(({ event, sig }) => ({ event, sig })));
+        this.statsInternal.spooled += pending.length;
+        if (evicted.events > 0) {
+          this.statsInternal.dropped += evicted.events;
+          this.report({
+            code: 'spool',
+            message: `spool limit reached: evicted ${evicted.events} oldest event(s) in ${evicted.files} file(s)`,
+          });
+        }
+        return;
+      } catch (err) {
+        this.report({
+          code: 'spool',
+          message: err instanceof Error ? err.message : 'spool write failed',
+        });
+      }
+    }
+    this.statsInternal.dropped += pending.length;
+    this.report({ code: 'delivery_failed', message: reason ?? 'delivery failed' });
   }
 
   private applyResults(
@@ -625,38 +727,29 @@ export class HalvorClient {
     }
   }
 
-  private async failBatch(batch: ReadyItem[], message: string, reSpool: boolean): Promise<void> {
-    if (reSpool && this.spool) {
-      try {
-        const envelopes: SpoolEnvelope[] = batch.map(({ event, sig }) => ({ event, sig }));
-        this.spool.write(envelopes);
-        this.statsInternal.spooled += batch.length;
-        return;
-      } catch (err) {
-        this.report({
-          code: 'spool',
-          message: err instanceof Error ? err.message : 'spool write failed',
-        });
-      }
-    }
-    if (!reSpool) {
-      // Spool replay failed; leave the existing file for a later attempt.
+  /**
+   * Sends spooled files oldest first, one file in memory at a time. A file the API rejects for
+   * good is dead-lettered and the next file is tried. When the API is unavailable, the file keeps
+   * only the events that are still undelivered and replay backs off.
+   */
+  private async replaySpool(): Promise<void> {
+    const spool = this.spool;
+    if (!spool || this.disabled) return;
+    if (Date.now() < this.spoolCooldownUntil) return;
+    let names: string[];
+    try {
+      names = await spool.files();
+    } catch (err) {
+      this.report({ code: 'spool', message: err instanceof Error ? err.message : 'spool read failed' });
       return;
     }
-    this.statsInternal.dropped += batch.length;
-    this.report({ code: 'delivery_failed', message });
-  }
-
-  private async replaySpool(): Promise<void> {
-    if (!this.spool || this.disabled) return;
-    if (Date.now() < this.spoolCooldownUntil) return;
-    const files = this.spool.list();
-    for (const { file, envelopes, corrupt } of files) {
+    for (const file of names) {
+      const { envelopes, corrupt } = await spool.read(file);
       if (corrupt > 0) {
         this.report({ code: 'spool', message: `skipped ${corrupt} corrupt spool line(s)` });
       }
       if (envelopes.length === 0) {
-        this.spool.remove(file);
+        await spool.remove(file);
         continue;
       }
 
@@ -666,15 +759,22 @@ export class HalvorClient {
         sig: e.sig,
       }));
 
-      const ok = await this.deliverBatch(items, { reSpool: false });
-      if (ok) {
-        this.statsInternal.replayed += items.length;
-        this.spool.remove(file);
-      } else {
-        // API still down; keep the file and back off.
-        this.spoolCooldownUntil = Date.now() + (this.retryDelaysMs.at(-1) ?? 32_000);
-        return;
+      const droppedBefore = this.statsInternal.dropped;
+      const { pending } = await this.deliverBatch(items);
+      const dropped = this.statsInternal.dropped - droppedBefore;
+      this.statsInternal.replayed += items.length - pending.length - dropped;
+
+      if (pending.length === 0) {
+        await spool.remove(file);
+        continue;
       }
+      // API still unavailable: keep only what was not delivered, then back off.
+      await spool.rewrite(
+        file,
+        pending.map(({ event, sig }) => ({ event, sig })),
+      );
+      this.spoolCooldownUntil = Date.now() + (this.retryDelaysMs.at(-1) ?? 32_000);
+      return;
     }
   }
 

@@ -10,5 +10,5 @@
       "@halvorai/packs/verify": ["./vendor/packs/verify.ts"]
     }
   },
-  "include": ["src", "vendor"]
+  "include": ["src", "vendor", "test"]
 }

@@ -6,8 +6,8 @@ export interface MappedMppEvent {
   type: string;
   occurred_at?: string;
   source: { adapter: 'mpp-server' };
-  agent: { id: string };
-  owner: { id: string; type: 'person' | 'business' };
+  agent?: { id: string };
+  owner?: { id: string; type: 'person' | 'business' };
   payment: Record<string, unknown>;
   payee: Record<string, unknown>;
   evidence: {
@@ -25,15 +25,24 @@ function methodOf(raw: string): string {
   return raw;
 }
 
-function attribution(): {
-  agent: { id: string };
-  owner: { id: string; type: 'person' | 'business' };
-} {
+/**
+ * Agent and owner for a mapped event. When the caller set them with `withAgentContext`, they are
+ * left out so the client fills the full context (name, framework, country, …) at emit time.
+ */
+function attribution(): Pick<MappedMppEvent, 'agent' | 'owner'> {
   const ctx = currentContext();
-  return {
-    agent: { id: ctx?.agent?.id ?? 'unattributed' },
-    owner: { id: ctx?.owner?.id ?? 'unattributed', type: ctx?.owner?.type ?? 'business' },
-  };
+  const out: Pick<MappedMppEvent, 'agent' | 'owner'> = {};
+  if (ctx?.agent === undefined) out.agent = { id: 'unattributed' };
+  if (ctx?.owner === undefined) out.owner = { id: 'unattributed', type: 'business' };
+  return out;
+}
+
+function requireCurrency(challenge: MppChallenge): string {
+  const currency = challenge.request.currency;
+  if (currency === undefined) {
+    throw new Error('MPP challenge has no currency token address; event not recorded');
+  }
+  return currency;
 }
 
 function amountFromChallenge(challenge: MppChallenge): Record<string, unknown> {
@@ -45,7 +54,7 @@ function amountFromChallenge(challenge: MppChallenge): Record<string, unknown> {
       unit: 'atomic',
       asset: {
         network: 'tempo:mainnet',
-        address: challenge.request.currency ?? '0x0000000000000000000000000000000000000000',
+        address: requireCurrency(challenge),
         symbol: 'USD',
         decimals: 6,
       },
@@ -91,8 +100,7 @@ export function mapMppChallenge(challenge: MppChallenge): MappedMppEvent {
   const mapped: MappedMppEvent = {
     type: 'payment.requested',
     source: { adapter: 'mpp-server' },
-    agent: attr.agent,
-    owner: attr.owner,
+    ...attr,
     payment,
     payee: payeeFromChallenge(challenge),
     evidence: [],
@@ -131,8 +139,7 @@ export function mapMppReceipt(receipt: MppReceipt, challenge?: MppChallenge): Ma
   const mapped: MappedMppEvent = {
     type: 'payment.settled',
     source: { adapter: 'mpp-server' },
-    agent: attr.agent,
-    owner: attr.owner,
+    ...attr,
     payment: {
       payment_id: paymentId,
       rail: 'mpp',
