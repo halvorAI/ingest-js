@@ -192,11 +192,15 @@ describe('mapped x402 events validate against ApeEventSchema', () => {
 describe('withHalvor', () => {
   it('emits requested then authorized then settled across a paid fetch', async () => {
     const types: string[] = [];
+    const events: Record<string, unknown>[] = [];
     const client = new HalvorClient({
       sourceKey: privateJwk,
       environment: 'test',
       sink: (batch) => {
-        for (const e of batch) types.push(String(e.event['type']));
+        for (const e of batch) {
+          types.push(String(e.event['type']));
+          events.push(e.event as Record<string, unknown>);
+        }
       },
       exitHook: false,
     });
@@ -236,6 +240,17 @@ describe('withHalvor', () => {
     expect(calls).toBe(2);
     await client.flush();
     expect(types).toEqual(['payment.requested', 'payment.authorized', 'payment.settled']);
+    const [requested, authorized, settled] = events as [
+      Record<string, any>,
+      Record<string, any>,
+      Record<string, any>,
+    ];
+    // ape-schema MAPPINGS §5.1: requested id comes from the event id, later stages share the nonce id.
+    expect(requested['payment']['payment_id']).toBe(
+      `x402:${requested['payment']['rail_ref']['network']}:requested:${requested['id']}`,
+    );
+    expect(authorized['related']).toEqual({ previous_event_id: requested['id'] });
+    expect(authorized['payment']['payment_id']).toBe(settled['payment']['payment_id']);
     await client.close({ timeoutMs: 100 });
   });
 
@@ -393,7 +408,9 @@ describe('x402 data quality (JS-6, JS-7, payment ids)', () => {
   it('gives every 402 challenge its own payment id', () => {
     const a = mapPaymentRequired(required, 'x402-client')?.payment['payment_id'];
     const b = mapPaymentRequired(required, 'x402-client')?.payment['payment_id'];
-    expect(a).toMatch(/^x402:eip155:8453:requested:/);
+    expect(a).toMatch(/^x402:eip155:8453:requested:evt_/);
     expect(a).not.toBe(b);
+    const mapped = mapPaymentRequired(required, 'x402-client');
+    expect(mapped?.payment['payment_id']).toBe(`x402:eip155:8453:requested:${mapped?.id}`);
   });
 });

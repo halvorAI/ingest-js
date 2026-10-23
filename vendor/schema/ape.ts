@@ -304,8 +304,13 @@ export const ApeEventSchema = z
       [['agent', 'name'], event.agent.name],
       [['owner', 'display_name'], event.owner.display_name],
       [['payee', 'name'], event.payee.name],
-      ...Object.entries(event.labels ?? {}).map(
-        ([key, value]): [(string | number)[], string] => [['labels', key], value],
+      [['payee', 'website'], event.payee.website],
+      [['payee', 'resource_url'], event.payee.resource_url],
+      ...Object.entries(event.labels ?? {}).flatMap(
+        ([key, value]): [(string | number)[], string][] => [
+          [['labels', key], key],
+          [['labels', key], value],
+        ],
       ),
     ];
     for (const [path, text] of freeText) {

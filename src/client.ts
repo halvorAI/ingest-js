@@ -543,6 +543,8 @@ export class HalvorClient {
       ['agent', 'name'],
       ['owner', 'display_name'],
       ['payee', 'name'],
+      ['payee', 'website'],
+      ['payee', 'resource_url'],
       ['instruction', 'summary'],
     ] as const) {
       const parent = event[path[0]];
@@ -554,7 +556,11 @@ export class HalvorClient {
       }
     }
     if (event['labels'] && typeof event['labels'] === 'object') {
-      event['labels'] = redactDeep(event['labels'], this.redact);
+      const labels: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(event['labels'] as Record<string, unknown>)) {
+        labels[redactText(key, this.redact)] = redactDeep(value, this.redact);
+      }
+      event['labels'] = labels;
     }
 
     const evidence = event['evidence'];

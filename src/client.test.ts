@@ -780,3 +780,29 @@ describe('stats', () => {
     });
   });
 });
+
+describe('card numbers in payee URLs and label keys', () => {
+  it('redacts them before signing, so the event still validates', async () => {
+    const out: Record<string, unknown>[] = [];
+    const client = new HalvorClient({
+      sourceKey: privateJwk,
+      environment: 'test',
+      exitHook: false,
+      sink: (batch) => {
+        for (const e of batch) out.push(e.event as Record<string, unknown>);
+      },
+    });
+    client.emit({
+      ...base,
+      payee: { ...payee, website: 'https://shop.example/?card=4242424242424242' },
+      labels: { '4242 4242 4242 4242': 'x' },
+    });
+    await client.flush();
+    expect(out).toHaveLength(1);
+    const text = JSON.stringify(out[0]);
+    expect(text).not.toContain('4242424242424242');
+    expect(text).not.toContain('4242 4242 4242 4242');
+    expect(ApeEventSchema.safeParse(out[0]).success).toBe(true);
+    await client.close({ timeoutMs: 100 });
+  });
+});

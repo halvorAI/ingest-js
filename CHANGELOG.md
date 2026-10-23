@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.1 (unreleased)
+
+### Fixed
+
+- x402 `payment.requested` events use `payment_id` `x402:<network>:requested:<event id>`, as ape-schema MAPPINGS §5.1 requires (0.3.0 used a separate random UUID), so the payment id points back at the event.
+- `withHalvor` links each `payment.authorized` event to the 402 challenge it answers with `related.previous_event_id`. It also reads `PAYMENT-SIGNATURE` from a `Request` object, not only from `init.headers`.
+- Card numbers in `payee.website`, `payee.resource_url` and label keys are redacted before signing and rejected by validation, as the APE card-number rule requires.
+
+### Added
+
+- The ape-schema conformance cases (40 events, JCS number and object vectors) run in the unit tests, the same files the Python SDK runs. 223 tests.
+
+## 0.3.0
 
 ### Breaking
 

@@ -10,23 +10,41 @@ import {
   type X402SettlementResponse,
 } from './map.js';
 
-function toHeaders(init?: RequestInit): Headers {
-  return new Headers(init?.headers);
+type FetchInput = Parameters<typeof fetch>[0];
+
+function toHeaders(input: FetchInput, init?: RequestInit): Headers {
+  if (init?.headers !== undefined) return new Headers(init.headers);
+  if (typeof Request !== 'undefined' && input instanceof Request) return new Headers(input.headers);
+  return new Headers();
 }
+
+function urlKey(input: FetchInput): string {
+  const raw =
+    typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+  const hash = raw.indexOf('#');
+  return hash === -1 ? raw : raw.slice(0, hash);
+}
+
+/** Challenges we have not yet seen a payment for, per URL. Bounded so it cannot grow forever. */
+const MAX_PENDING_CHALLENGES = 1000;
 
 /**
  * Wrap a fetch implementation (typically `wrapFetchWithPayment(...)`) so HalvorAI
  * observes x402 headers without sitting in the payment path.
  */
 export function withHalvor(fetchImpl: typeof fetch, client: HalvorClient): typeof fetch {
+  const requested = new Map<string, string>();
   const wrapped: typeof fetch = async (input, init) => {
-    const reqHeaders = toHeaders(init);
+    const key = urlKey(input);
+    const reqHeaders = toHeaders(input, init);
     const signature = headerGet(reqHeaders, 'PAYMENT-SIGNATURE');
     let payload: X402PaymentPayload | undefined;
     if (signature !== null) {
       try {
         payload = decodePaymentHeader<X402PaymentPayload>(signature);
-        const mapped = mapPaymentPayload(payload, 'x402-client');
+        const previous = requested.get(key);
+        requested.delete(key);
+        const mapped = mapPaymentPayload(payload, 'x402-client', undefined, previous);
         if (mapped !== undefined) client.emit(mapped);
       } catch (err) {
         client.notify({
@@ -45,7 +63,15 @@ export function withHalvor(fetchImpl: typeof fetch, client: HalvorClient): typeo
         try {
           const required = decodePaymentHeader<X402PaymentRequired>(requiredHeader);
           const mapped = mapPaymentRequired(required, 'x402-client');
-          if (mapped !== undefined) client.emit(mapped);
+          if (mapped !== undefined) {
+            const eventId = client.emit(mapped);
+            requested.delete(key);
+            requested.set(key, eventId);
+            if (requested.size > MAX_PENDING_CHALLENGES) {
+              const oldest = requested.keys().next().value;
+              if (oldest !== undefined) requested.delete(oldest);
+            }
+          }
         } catch (err) {
           client.notify({
             code: 'invalid_event',

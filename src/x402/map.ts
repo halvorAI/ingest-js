@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { evidenceSha256 } from '@halvorai/schema';
+import { evidenceSha256, newId } from '@halvorai/schema';
 import { currentContext } from '../context.js';
 
 export interface X402Accept {
@@ -48,6 +47,8 @@ export interface X402SettlementResponse {
 export type X402Adapter = 'x402-client' | 'x402-server';
 
 export interface MappedX402Event {
+  /** Set on `payment.requested`, so the authorized event can link to it. */
+  id?: string;
   type: string;
   source: { adapter: X402Adapter };
   agent?: { id: string };
@@ -55,6 +56,7 @@ export interface MappedX402Event {
   payment: Record<string, unknown>;
   payee: Record<string, unknown>;
   instrument?: Record<string, unknown>;
+  related?: { previous_event_id: string };
   evidence: {
     kind: 'x402.payment_payload' | 'x402.settlement';
     format: 'json';
@@ -148,9 +150,11 @@ export function mapPaymentRequired(
   const accept = required.accepts?.[0];
   if (accept === undefined) return undefined;
   const attr = attribution();
+  // Each 402 challenge is its own payment request; the payer's nonce does not exist yet, so the
+  // payment id is built from the event id (ape-schema MAPPINGS §5.1).
+  const id = newId('evt');
   const payment: Record<string, unknown> = {
-    // Each 402 challenge is its own payment request; the payer's nonce does not exist yet.
-    payment_id: `x402:${accept.network ?? 'unknown'}:requested:${randomUUID()}`,
+    payment_id: `x402:${accept.network ?? 'unknown'}:requested:${id}`,
     rail: 'x402',
     amount: amountOf(accept),
     status: 'requested',
@@ -160,6 +164,7 @@ export function mapPaymentRequired(
   if (description !== undefined) payment['description'] = description.slice(0, 256);
 
   return {
+    id,
     type: 'payment.requested',
     source: { adapter },
     ...attr,
@@ -169,10 +174,15 @@ export function mapPaymentRequired(
   };
 }
 
+/**
+ * @param previousEventId id of the `payment.requested` event this payment answers. The adapters
+ * pass it when they saw the 402 challenge for the same URL; it becomes `related.previous_event_id`.
+ */
 export function mapPaymentPayload(
   payload: X402PaymentPayload,
   adapter: X402Adapter,
   payeeOverride?: Record<string, unknown>,
+  previousEventId?: string,
 ): MappedX402Event | undefined {
   const accept = payload.accepted;
   if (accept === undefined) return undefined;
@@ -213,6 +223,7 @@ export function mapPaymentPayload(
       wallet: { network: accept.network, address: payer },
     };
   }
+  if (previousEventId !== undefined) mapped.related = { previous_event_id: previousEventId };
   return mapped;
 }
 
