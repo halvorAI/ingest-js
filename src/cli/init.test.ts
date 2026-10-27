@@ -95,7 +95,7 @@ describe('runInit', () => {
     expect(result.sourceId).toBe('src_01INITTESTSOURCE00000000001');
     expect(result.eventId).toMatch(/^evt_/);
     expect(result.endpoint).toBe('https://api.sandbox.halvorai.com');
-    expect(result.dashboardUrl).toBe(`https://app.halvorai.com/payments?event=${result.eventId}`);
+    expect(result.dashboardUrl).toBe(`https://app.sandbox.halvorai.com/payments?event=${result.eventId}`);
     expect(calls.map((c) => c.url)).toEqual([
       'https://api.sandbox.halvorai.com/v1/sources',
       'https://api.sandbox.halvorai.com/v1/events',
@@ -143,7 +143,7 @@ describe('runInit', () => {
   });
 
   it('maps API endpoints to their dashboards', () => {
-    expect(dashboardFor('https://api.sandbox.halvorai.com')).toBe('https://app.halvorai.com');
+    expect(dashboardFor('https://api.sandbox.halvorai.com')).toBe('https://app.sandbox.halvorai.com');
     expect(dashboardFor('https://api.halvorai.com')).toBe('https://app.halvorai.com');
     expect(dashboardFor('http://localhost:8787')).toBe('http://localhost:3000');
     expect(dashboardFor('https://api.staging.example.com')).toBe('https://app.staging.example.com');

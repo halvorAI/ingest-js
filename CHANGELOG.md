@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.3.2
+
+### Fixed
+
+- `init` with a test key prints a link to the sandbox dashboard (app.sandbox.halvorai.com), where test keys and their events live. It used to link to app.halvorai.com.
+
+## 0.3.1
 
 ### Fixed
 
