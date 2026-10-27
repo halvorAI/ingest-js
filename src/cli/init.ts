@@ -5,9 +5,11 @@ import { generateSourceKeyPair, parseApiKey, type JWK } from '@halvorai/schema';
 import { HalvorClient } from '../client.js';
 
 const DASHBOARD_URL = 'https://app.halvorai.com';
+const SANDBOX_DASHBOARD_URL = 'https://app.sandbox.halvorai.com';
 
 /**
- * The dashboard that belongs to an API endpoint: the hosted API maps to app.halvorai.com, a local
+ * The dashboard that belongs to an API endpoint: the hosted API maps to app.halvorai.com, the
+ * sandbox API to app.sandbox.halvorai.com, a local
  * API on :8787 to the local dashboard on localhost:3000, and `api.<host>` to `app.<host>`.
  */
 export function dashboardFor(endpoint: string): string {
@@ -17,9 +19,8 @@ export function dashboardFor(endpoint: string): string {
   } catch {
     return DASHBOARD_URL;
   }
-  if (url.hostname === 'api.halvorai.com' || url.hostname === 'api.sandbox.halvorai.com') {
-    return DASHBOARD_URL;
-  }
+  if (url.hostname === 'api.halvorai.com') return DASHBOARD_URL;
+  if (url.hostname === 'api.sandbox.halvorai.com') return SANDBOX_DASHBOARD_URL;
   // The local dashboard is served (and signed in to) at localhost:3000, whatever loopback name the
   // API was given; a session cookie for localhost is not sent to 127.0.0.1.
   if (url.port === '8787') {

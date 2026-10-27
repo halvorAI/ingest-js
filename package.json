@@ -1,6 +1,6 @@
 {
   "name": "@halvorai/ingest",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Signed, attributed payment events for AI agents. Never in the payment path.",
   "type": "module",
   "author": "HalvorAI <hello@halvorai.com>",
