@@ -33,8 +33,14 @@ function luhnValid(digits: string): boolean {
   return sum % 10 === 0;
 }
 
+/**
+ * A digit run that is not glued to letters or more digits: inside a hex signature, a base64 value
+ * or an id, digits sit next to letters and are not a card number.
+ */
+const PAN_RUN = /(?<![0-9A-Za-z])\d(?:[ -]?\d)*(?![0-9A-Za-z])/g;
+
 function redactPan(text: string): string {
-  return text.replace(/\d(?:[ -]?\d)*/g, (run) => {
+  return text.replace(PAN_RUN, (run) => {
     const digits = run.replace(/[ -]/g, '');
     if (digits.length >= 13 && digits.length <= 19 && luhnValid(digits)) {
       return '[redacted:pan]';

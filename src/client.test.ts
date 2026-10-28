@@ -146,6 +146,17 @@ describe('emit: building the event', () => {
     expect(await verifyEvent(item?.event ?? {}, item?.sig ?? '', publicJwk)).toBe(true);
   });
 
+  it('stamps occurred_at when emit is called, not when the batch is built', async () => {
+    const { client, srv } = makeClient();
+    const before = Date.now();
+    client.emit(base);
+    await new Promise((r) => setTimeout(r, 1_200));
+    await client.flush();
+    const at = new Date(String(allSent(srv)[0]?.event['occurred_at'])).getTime();
+    expect(at).toBeGreaterThanOrEqual(before - 5);
+    expect(at).toBeLessThan(before + 500);
+  });
+
   it('posts to the endpoint implied by the key, with the key as a bearer token', async () => {
     const { client, srv } = makeClient();
     client.emit(base);
@@ -274,6 +285,33 @@ describe('emit: building the event', () => {
     const evidence = allSent(srv)[0]?.event['evidence'][0];
     expect(evidence.value).toBe(sdjwt);
     expect(evidence.sha256).toBe('sha256:' + 'a'.repeat(64));
+  });
+
+  it('leaves a signed x402 payment payload untouched, even when its signature holds a Luhn-valid run', async () => {
+    const { client, srv } = makeClient();
+    // 4242424242424242 is Luhn-valid; inside a hex signature it must survive.
+    const payload = {
+      accepted: { scheme: 'exact', network: 'eip155:84532', amount: '10000' },
+      payload: {
+        signature: `0x${'ab'.repeat(20)}4242424242424242${'cd'.repeat(20)}`,
+        authorization: {},
+      },
+    };
+    client.emit({
+      ...base,
+      evidence: [
+        {
+          kind: 'x402.payment_payload',
+          format: 'json',
+          value: payload,
+          sha256: 'sha256:' + 'b'.repeat(64),
+        },
+      ],
+    });
+    await client.flush();
+    const evidence = allSent(srv)[0]?.event['evidence'][0];
+    expect(evidence.value).toEqual(payload);
+    expect(evidence.sha256).toBe('sha256:' + 'b'.repeat(64));
   });
 
   it('copies its input, so later changes by the caller do not leak in', async () => {

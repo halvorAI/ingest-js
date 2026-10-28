@@ -255,7 +255,8 @@ export const LabelsSchema = z
  * between digits). Whole runs only, so order numbers do not trip it by chance on substrings.
  */
 export function containsPan(text: string): boolean {
-  for (const run of text.match(/\d(?:[ -]?\d)*/g) ?? []) {
+  // Same boundaries as the redaction: digits glued to letters (hex, base64, ids) are not a card.
+  for (const run of text.match(/(?<![0-9A-Za-z])\d(?:[ -]?\d)*(?![0-9A-Za-z])/g) ?? []) {
     const digits = run.replace(/[ -]/g, '');
     if (digits.length >= 13 && digits.length <= 19 && luhnValid(digits)) return true;
   }

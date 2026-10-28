@@ -109,6 +109,9 @@ function withJitter(baseMs: number): number {
   return Math.floor(baseMs * (1 + Math.random() * 0.2));
 }
 
+/** JSON evidence that carries a signature over its own fields, so redaction would break it. */
+const SIGNED_JSON_EVIDENCE = new Set(['x402.payment_payload']);
+
 function cloneInput(input: unknown): Record<string, unknown> | null {
   try {
     return structuredClone(input) as Record<string, unknown>;
@@ -335,6 +338,14 @@ export class HalvorClient {
         return id;
       }
 
+      // The payment happened now, not when the background drain builds the batch.
+      if (
+        typeof cloned === 'object' &&
+        !Array.isArray(cloned) &&
+        typeof cloned['occurred_at'] !== 'string'
+      ) {
+        cloned['occurred_at'] = nowUtc();
+      }
       this.rawQueue.push({ id, input: cloned, context });
       this.scheduleFlushTimer();
       if (this.rawQueue.length + this.readyQueue.length >= this.batchSize) {
@@ -569,6 +580,8 @@ export class HalvorClient {
       if (!item || typeof item !== 'object') continue;
       const ev = item as Record<string, unknown>;
       if (ev['format'] !== 'json') continue;
+      // Signed payloads are evidence only while byte-identical; they never hold card numbers.
+      if (SIGNED_JSON_EVIDENCE.has(String(ev['kind']))) continue;
       if (ev['value'] !== undefined) {
         ev['value'] = redactDeep(ev['value'], this.redact);
         ev['sha256'] = evidenceSha256(ev['value'] as string | object);
