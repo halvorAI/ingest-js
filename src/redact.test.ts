@@ -24,6 +24,22 @@ describe('redactText: card numbers', () => {
     }
   });
 
+  it('leaves digit runs inside hex, base64 and ids alone', () => {
+    for (const text of [
+      '0x9632e1311996ebcb38d7a4242424242424242b5beb14f513',
+      'c2lnbmF0dXJl4242424242424242AAA=',
+      'ord_4242424242424242x',
+    ]) {
+      expect(redactText(text), text).toBe(text);
+    }
+  });
+
+  it('still finds a card number in a URL path', () => {
+    expect(redactText('https://api.example/r/4242424242424242')).toBe(
+      'https://api.example/r/[redacted:pan]',
+    );
+  });
+
   it('finds several in one string', () => {
     expect(redactText('a 4242424242424242 b 5555555555554444 c')).toBe(
       'a [redacted:pan] b [redacted:pan] c',

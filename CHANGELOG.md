@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+### Fixed
+
+- `emit` stamps `occurred_at` when it is called. It was stamped when the background drain built the batch, so events in one batch shared a time and a steady payment loop looked irregular to HalvorAI's loop rule.
+- Card-number redaction and the card-number check skip digit runs inside hex, base64 and ids, and `x402.payment_payload` evidence is no longer redacted. Parts of x402 signatures were replaced with `[redacted:pan]`, which then failed verification and raised a false `evidence_invalid` alert.
+
 ## 0.3.2
 
 ### Fixed
