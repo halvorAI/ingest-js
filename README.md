@@ -117,6 +117,19 @@ and not retried.
 | `@halvorai/ingest/mcp` | Attribute payments made through MCP tool calls |
 | `@halvorai/ingest/evidence` | Attach AP2, Verifiable Intent and Visa TAP proofs verbatim |
 
+For Stripe Issuing, tag one card per agent. Card events carry no agent name of their own, so pass it here:
+
+```ts
+import { tagIssuingCard } from '@halvorai/ingest/stripe';
+
+await stripe.issuing.cards.create(
+  tagIssuingCard(
+    { cardholder, currency: 'usd', type: 'virtual' },
+    { agentId: 'agt_travel_12', agentName: 'Travel booking agent', framework: 'langgraph' },
+  ),
+);
+```
+
 Guides for each: [docs.halvorai.com](https://docs.halvorai.com).
 
 ## Verify an evidence pack

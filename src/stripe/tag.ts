@@ -3,6 +3,9 @@ import type { StripeMetadata } from './types.js';
 
 export interface TagOverrides {
   agentId?: string;
+  /** Shown in the dashboard; card events carry no other agent name. */
+  agentName?: string;
+  framework?: string;
   ownerId?: string;
   ownerType?: 'person' | 'business';
   instructionId?: string;
@@ -16,11 +19,16 @@ function mergeHalvorMetadata(
   const meta: StripeMetadata = { ...(existing ?? {}) };
 
   const agentId = overrides.agentId ?? ctx?.agent?.id;
+  const agentName = overrides.agentName ?? ctx?.agent?.name;
+  const framework = overrides.framework ?? ctx?.agent?.framework;
   const ownerId = overrides.ownerId ?? ctx?.owner?.id;
   const ownerType = overrides.ownerType ?? ctx?.owner?.type;
   const instructionId = overrides.instructionId ?? ctx?.instruction?.id;
 
   if (agentId !== undefined) meta['halvor_agent_id'] = agentId;
+  // Cut to the APE limits, which also keeps them inside Stripe's 500-character metadata values.
+  if (agentName !== undefined) meta['halvor_agent_name'] = agentName.slice(0, 128);
+  if (framework !== undefined) meta['halvor_agent_framework'] = framework.slice(0, 64);
   if (ownerId !== undefined) meta['halvor_owner_id'] = ownerId;
   if (ownerType !== undefined) meta['halvor_owner_type'] = ownerType;
   if (instructionId !== undefined) meta['halvor_instruction_id'] = instructionId;
