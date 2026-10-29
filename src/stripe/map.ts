@@ -7,7 +7,7 @@ export interface MappedStripeEvent {
   type: string;
   occurred_at?: string;
   source: { adapter: 'stripe' | 'stripe-issuing' };
-  agent: { id: string; name?: string };
+  agent: { id: string; name?: string; framework?: string };
   owner: { id: string; type: 'person' | 'business' };
   instruction?: { id: string; hash: string };
   payment: Record<string, unknown>;
@@ -67,7 +67,7 @@ function cardMetadata(obj: Record<string, unknown>): StripeMetadata {
 }
 
 function attribution(meta: StripeMetadata): {
-  agent: { id: string };
+  agent: { id: string; name?: string; framework?: string };
   owner: { id: string; type: 'person' | 'business' };
   instruction?: { id: string; hash: string };
 } {
@@ -76,13 +76,17 @@ function attribution(meta: StripeMetadata): {
   const ownerType = meta['halvor_owner_type'] === 'person' ? 'person' : 'business';
   const instructionId = meta['halvor_instruction_id'];
   const result: {
-    agent: { id: string };
+    agent: { id: string; name?: string; framework?: string };
     owner: { id: string; type: 'person' | 'business' };
     instruction?: { id: string; hash: string };
   } = {
     agent: { id: agentId },
     owner: { id: ownerId, type: ownerType },
   };
+  const agentName = meta['halvor_agent_name'];
+  const framework = meta['halvor_agent_framework'];
+  if (agentName !== undefined && agentName !== '') result.agent.name = agentName.slice(0, 128);
+  if (framework !== undefined && framework !== '') result.agent.framework = framework.slice(0, 64);
   if (instructionId !== undefined) {
     // Webhooks only carry the id; hash a stable local stand-in so APE validation passes.
     result.instruction = {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4
+
+### Added
+
+- `tagIssuingCard` and `tagPaymentIntent` also write `halvor_agent_name` and `halvor_agent_framework` to the Stripe metadata, from the agent context or the new `agentName` and `framework` overrides (cut to 128 and 64 characters). The Stripe webhook handler maps them to `agent.name` and `agent.framework`. Card agents appeared in the HalvorAI dashboard by id only.
+
 ## 0.3.3
 
 ### Fixed

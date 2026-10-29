@@ -88,6 +88,25 @@ describe('mapStripeEvent (fixtures from Stripe test-mode shapes)', () => {
     });
     expect(mapped?.agent.id).toBe('agt_travel_12');
   });
+  it('P9.25 takes the agent name and framework from the card metadata', () => {
+    const event = loadFixture('issuing_authorization.created.json');
+    const auth = event.data.object as Record<string, unknown>;
+    const card = auth['card'] as Record<string, unknown>;
+    card['metadata'] = {
+      ...(card['metadata'] as Record<string, string>),
+      halvor_agent_name: 'Travel booking agent',
+      halvor_agent_framework: 'errandly-agents',
+    };
+    const mapped = mapStripeEvent(event);
+    expect(mapped?.agent).toEqual({
+      id: 'agt_travel_12',
+      name: 'Travel booking agent',
+      framework: 'errandly-agents',
+    });
+    expect(mapStripeEvent(loadFixture('issuing_authorization.created.json'))?.agent).toEqual({
+      id: 'agt_travel_12',
+    });
+  });
 });
 
 describe('mapped fixtures validate against ApeEventSchema', () => {
@@ -153,6 +172,29 @@ describe('tag helpers', () => {
       halvor_agent_id: 'agt_override',
       halvor_owner_id: 'own_outer',
     });
+  });
+
+  it('P9.25 tagIssuingCard stores the agent name and framework, within the APE limits', async () => {
+    const fromContext = await withAgentContext(
+      {
+        agent: { id: 'agt_ctx', name: 'Shopping agent', framework: 'errandly-agents' },
+        owner: { id: 'own_ctx', type: 'business' },
+      },
+      () => tagIssuingCard({ currency: 'usd', type: 'virtual' }),
+    );
+    expect(fromContext.metadata).toMatchObject({
+      halvor_agent_id: 'agt_ctx',
+      halvor_agent_name: 'Shopping agent',
+      halvor_agent_framework: 'errandly-agents',
+    });
+
+    const long = tagIssuingCard(
+      { currency: 'usd', type: 'virtual' },
+      { agentId: 'agt_x', agentName: 'n'.repeat(300), framework: 'f'.repeat(100) },
+    );
+    expect(long.metadata['halvor_agent_name']).toHaveLength(128);
+    expect(long.metadata['halvor_agent_framework']).toHaveLength(64);
+    expect(Object.keys(long.metadata).every((k) => k.length <= 40)).toBe(true);
   });
 });
 
