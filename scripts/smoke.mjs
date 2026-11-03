@@ -22,7 +22,7 @@ try {
 import assert from 'node:assert/strict';
 import { generateKeyPair, exportJWK } from 'jose';
 import * as core from '@halvorai/ingest';
-for (const p of ['cli', 'stripe', 'x402', 'mpp', 'mcp', 'evidence']) await import('@halvorai/ingest/' + p);
+for (const p of ['cli', 'stripe', 'x402', 'mpp', 'mcp', 'evidence', 'device']) await import('@halvorai/ingest/' + p);
 assert.equal(core.name, '@halvorai/ingest');
 
 const { privateKey } = await generateKeyPair('EdDSA', { crv: 'Ed25519', extractable: true });

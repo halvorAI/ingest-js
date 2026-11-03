@@ -132,6 +132,66 @@ await stripe.issuing.cards.create(
 
 Guides for each: [docs.halvorai.com](https://docs.halvorai.com).
 
+## Mobile apps (Flutter)
+
+Apps built with [`halvorai_ingest_flutter`](https://github.com/halvorAI/ingest-dart) sign events on the phone, with a key that each install makes for itself. The app never holds your API key: your backend registers each install's public key and forwards its signed batches. `@halvorai/ingest/device` provides both routes:
+
+```ts
+import { deviceRoutes } from '@halvorai/ingest/device';
+
+const halvor = deviceRoutes({
+  apiKey: process.env.HALVOR_API_KEY,
+  // Your own session check: the signed-in user's owner id, or null (answers 401).
+  ownerId: async (request) => (await getSession(request))?.userId ?? null,
+});
+```
+
+The app's `provisionUrl` goes to `halvor.register` and its `forwardUrl` to `halvor.forward`. Both take a Fetch `Request` and return a `Response`:
+
+```ts
+// Next.js (app router), app/halvor/sources/route.ts
+export const POST = (request: Request) => halvor.register(request);
+// Next.js (app router), app/halvor/events/route.ts
+export const POST = (request: Request) => halvor.forward(request);
+
+// Hono
+app.post('/halvor/sources', (c) => halvor.register(c.req.raw));
+app.post('/halvor/events', (c) => halvor.forward(c.req.raw));
+
+// Express: pass the raw body through, never a parsed and re-serialized one.
+import { forwardEnvelopes, registerDeviceSource, DeviceRequestError } from '@halvorai/ingest/device';
+
+app.post('/halvor/events', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: { code: 'unauthorized', message: 'sign in first' } });
+  const out = await forwardEnvelopes(req.body, { expectedOwnerId: req.user.id });
+  res.status(out.status).type(out.contentType).send(out.body);
+});
+app.post('/halvor/sources', express.json(), async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: { code: 'unauthorized', message: 'sign in first' } });
+  try {
+    const { sourceId } = await registerDeviceSource({ publicJwk: req.body.public_jwk, name: req.body.name });
+    res.json({ source_id: sourceId });
+  } catch (err) {
+    if (err instanceof DeviceRequestError) return res.status(err.status).json(err);
+    throw err;
+  }
+});
+```
+
+What the routes do:
+
+- **`register`** accepts only the public half of an Ed25519 key, refusing a key with `d`. It registers the key with `POST /v1/sources` and answers `{"source_id": "src_…"}`.
+- **`forward`**:
+  - Checks that every event's `owner.id` is the signed-in user and its `environment` is the key's.
+  - Sends the body to `POST /v1/events` **byte for byte**, so the device's signatures stay valid.
+  - Answers with HalvorAI's status and body unchanged, which the app reads its per-event results from.
+- **Status codes tell the app what to do:**
+  - 401 or 403 means "try later": the app keeps the batch on disk and retries.
+  - 400, 413 and 422 are permanent: the app drops the batch, or splits it on 413.
+  - 502 means HalvorAI couldn't be reached, and the app retries.
+
+Set the signed-in user as `owner` in the app's agent context; events without it are refused.
+
 ## Verify an evidence pack
 
 Banks can check a HalvorAI evidence pack without trusting us:
