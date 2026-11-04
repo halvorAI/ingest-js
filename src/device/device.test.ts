@@ -211,6 +211,19 @@ describe('deviceRoutes', () => {
     expect(api.calls).toHaveLength(1);
   });
 
+  it.each([204, 205])('forward relays a bodyless %i from HalvorAI', async (status) => {
+    const api = fakeApi(() => new Response(null, { status }));
+    const res = await routes(api.fetch).forward(
+      new Request('https://app.example/halvor/events', {
+        method: 'POST',
+        body: JSON.stringify({ events: [envelope()] }),
+      }),
+    );
+    expect(res.status).toBe(status);
+    expect(res.body).toBeNull();
+    expect(api.calls).toHaveLength(1);
+  });
+
   it('both routes answer 401 without a signed-in user, which the app retries later', async () => {
     const api = fakeApi(accepted);
     const r = routes(api.fetch, null);

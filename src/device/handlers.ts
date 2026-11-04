@@ -17,6 +17,9 @@ export interface DeviceRoutes {
   forward(request: Request): Promise<Response>;
 }
 
+/** The Fetch API throws on any body with these statuses, even an empty string. */
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
 /**
  * The two routes an app using `halvorai_ingest_flutter` calls, as Fetch API handlers (Next.js
  * route handlers, Hono, Bun, Deno, Cloudflare Workers; Express through a small adapter). Your API
@@ -60,7 +63,7 @@ export function deviceRoutes(options: DeviceRoutesOptions): DeviceRoutes {
         ...options,
         expectedOwnerId: ownerId,
       });
-      return new Response(result.body, {
+      return new Response(NULL_BODY_STATUSES.has(result.status) ? null : result.body, {
         status: result.status,
         headers: { 'content-type': result.contentType },
       });
