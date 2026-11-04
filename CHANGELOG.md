@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+- `@halvorai/ingest/device`, the backend half of mobile apps built with `halvorai_ingest_flutter`, whose installs sign their own events:
+  - `registerDeviceSource` registers an install's public Ed25519 key (a key with `d` is refused).
+  - `forwardEnvelopes` checks each event's owner and environment, then passes the batch to `POST /v1/events` byte for byte and returns HalvorAI's answer unchanged.
+  - `deviceRoutes` provides both as Fetch API handlers for Next.js, Hono and similar.
+
+### Changed
+
+- `init` registers its source through the same code, and a network failure there now says `POST /v1/sources failed: <reason>`.
+
 ## 0.3.4
 
 ### Added
