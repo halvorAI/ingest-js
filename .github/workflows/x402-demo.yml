@@ -1,0 +1,26 @@
+name: x402 paid API example
+on:
+  pull_request:
+    paths:
+      - 'examples/x402-paid-api/**'
+      - '.github/workflows/x402-demo.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/x402-paid-api/**'
+jobs:
+  syntax-and-install:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install standalone demo dependencies
+        working-directory: examples/x402-paid-api
+        run: npm install --no-audit --no-fund
+      - name: Validate both demo scripts
+        working-directory: examples/x402-paid-api
+        run: npm run check
