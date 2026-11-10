@@ -36,6 +36,19 @@ const halvor = process.env.HALVOR_API_KEY && process.env.HALVOR_SOURCE_KEY
       onError: (e) => console.error('HalvorAI:', e.code, e.message),
     });
 
+// Print only the fields needed to diagnose a run (status, reason, tx hash); never signatures.
+function decodeHeader(value) {
+  if (!value) return undefined;
+  try {
+    const h = JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
+    const pick = { success: h.success, transaction: h.transaction, network: h.network, payer: h.payer,
+      errorReason: h.errorReason, error: h.error };
+    return Object.fromEntries(Object.entries(pick).filter(([, v]) => v !== undefined && v !== ''));
+  } catch {
+    return { undecodable: true };
+  }
+}
+
 // Place HalvorAI *under* the x402 fetch wrapper so we observe both the original
 // 402 challenge and the signed retry, including PAYMENT-RESPONSE after settlement.
 const payFetch = wrapFetchWithPayment(withHalvor(fetch, halvor), x402);
@@ -48,6 +61,10 @@ try {
   }, async () => {
     const response = await payFetch(target, { method: 'GET' });
     console.log('HTTP status:', response.status);
+    for (const name of ['PAYMENT-RESPONSE', 'PAYMENT-REQUIRED']) {
+      const summary = decodeHeader(response.headers.get(name));
+      if (summary) console.log(`${name}:`, JSON.stringify(summary));
+    }
     console.log('API result:', await response.text());
     if (!response.ok) process.exitCode = 1;
   });
