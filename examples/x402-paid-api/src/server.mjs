@@ -78,6 +78,20 @@ export function createApp({ payTo, facilitatorUrl, halvor, allowInsecureFacilita
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  // x402 syncs supported kinds once at startup and does not retry, so wait for the
+  // facilitator to answer /supported first (matters when it was started just before us).
+  const fUrl = process.env.FACILITATOR_URL;
+  for (let attempt = 1; fUrl; attempt++) {
+    try {
+      const r = await fetch(new URL('supported', fUrl.endsWith('/') ? fUrl : `${fUrl}/`), { signal: AbortSignal.timeout(5000) });
+      if (r.ok) break;
+      throw new Error(`HTTP ${r.status}`);
+    } catch (err) {
+      if (attempt >= 15) throw new Error(`Facilitator ${fUrl} is not answering /supported: ${err.message}`);
+      console.log(`Waiting for facilitator /supported (attempt ${attempt}/15)...`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
   const halvor = await makeHalvor();
   if (!process.env.HALVOR_API_KEY) {
     console.log('HalvorAI offline sink active (signed envelopes are printed; not uploaded).');

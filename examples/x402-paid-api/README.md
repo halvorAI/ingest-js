@@ -2,7 +2,7 @@
 
 A small **real x402 v2 payment flow** for Sprint A: an Express API protects `GET /api/research`, an agent-shaped client pays it, and the HalvorAI SDK **observes** the HTTP challenge, payment and settlement headers. The returned research data is synthetic.
 
-**Status:** code example. Not yet a verified end-to-end test: it requires an eligible testnet facilitator, a recipient address, a testnet payer wallet with test USDC, and a successful run. Do not claim that funds settled or that live HalvorAI ingestion works until these are tested.
+**Status:** testnet only. One end-to-end Base Sepolia payment was verified on 10 Nov 2026 using the bundled local facilitator (see below). HalvorAI cloud ingestion has not been tested; the events in that run were offline signed only.
 
 ## Why this is safe to demo
 
@@ -52,7 +52,9 @@ On 10 Nov 2026 the public `x402.org` facilitator failed three times with `invali
 
 1. Create a **separate** disposable Base Sepolia account for the facilitator signer, and fund it with a little Base Sepolia **test ETH** from a faucet. It pays the gas for `transferWithAuthorization`.
 2. In `.env`, set `FACILITATOR_SIGNER_PRIVATE_KEY` (never the payer key) and `FACILITATOR_URL=http://127.0.0.1:4022`.
-3. Run `npm run facilitator` in one terminal, `npm start` in a second and `npm run pay` in a third.
+3. Run `npm run facilitator` in one terminal, `npm start` in a second and `npm run pay` in a third. The server waits up to 30 seconds for the facilitator's `/supported` before it starts.
+
+**Verified 10 Nov 2026:** with the local facilitator, a paid call returned 200 and settled 0.001 test USDC from payer to receiver on Base Sepolia: [0xbb38…cc2c](https://sepolia.basescan.org/tx/0xbb3840525f53fdd07dbcf91861482a6632b60453beedd5f29e0d84ec23dacc2c). HalvorAI events were offline signed only, not uploaded to cloud.
 
 The local facilitator registers only x402 v2 `exact` on `eip155:84532` and binds to `127.0.0.1`. It never holds funds: USDC moves directly from payer to receiver onchain. The resource server accepts a plain-HTTP facilitator URL only on localhost.
 
