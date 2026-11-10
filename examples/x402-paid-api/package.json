@@ -2,11 +2,14 @@
   "name": "halvorai-x402-paid-api-demo",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node src/server.mjs",
     "pay": "node src/pay-client.mjs",
-    "check": "node --check src/server.mjs && node --check src/pay-client.mjs"
+    "check": "node --check src/server.mjs && node --check src/pay-client.mjs",
+    "test": "node --test test/smoke.test.mjs"
   },
   "dependencies": {
     "@halvorai/ingest": "0.3.4",

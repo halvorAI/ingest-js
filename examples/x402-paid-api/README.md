@@ -9,7 +9,9 @@ A small **real x402 v2 payment flow** for Sprint A: an Express API protects `GET
 - Base Sepolia only (`eip155:84532`), never mainnet.
 - The receiving address belongs to the operator; HalvorAI holds no funds.
 - `halvorX402Express` is observe-only. It does not approve or settle payments.
-- The payer has a hard-coded **$0.01 max per payment**.
+- The payer has a hard-coded **$0.01 max per payment** and refuses to pay a non-local `API_BASE_URL` unless `ALLOW_REMOTE_API=1`.
+- The server binds to `127.0.0.1` only, so it is not reachable from other machines.
+- Offline signed envelopes include the x402 payment payload (the payer's signed transfer authorization) as evidence. That is not a private key, but treat demo output as private until the payment has settled.
 - By default, the SDK writes signed envelopes to stdout using ephemeral keys. It **does not** send events to HalvorAI cloud. To test cloud ingestion, supply your own registered sandbox credentials.
 - Use a *disposable* testnet payer key. Do not put production credentials in this repository, commit a `.env`, or paste secrets into chat.
 
@@ -23,8 +25,9 @@ Node.js 22+, a Base Sepolia receiving wallet, a Base Sepolia facilitator that ad
 cd examples/x402-paid-api
 cp .env.example .env
 # Fill RECEIVER_ADDRESS and FACILITATOR_URL. Keep .env private.
-npm install
+npm ci
 npm run check
+npm test   # offline: free /health, unpaid 402 + PAYMENT-REQUIRED, HalvorAI event (stub facilitator)
 npm start
 ```
 
@@ -59,7 +62,7 @@ Create and register a source signing key using the published SDK instructions; s
 
 - [ ] Confirm the facilitator supports `eip155:84532` and `exact`.
 - [ ] Verify wallet and test USDC (no mainnet funds).
-- [ ] Install the pinned package versions, run `npm run check`.
+- [x] Install the pinned package versions (`npm ci`, lockfile committed), run `npm run check` and `npm test`.
 - [ ] Exercise challenge, signed retry and successful testnet settlement.
 - [ ] Inspect observed `payment.requested`, `payment.authorized`, `payment.settled` events and no sensitive material in logs.
 - [ ] Test sandbox ingestion and SDK flush if demonstrating cloud-side evidence.

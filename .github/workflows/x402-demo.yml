@@ -20,7 +20,7 @@ jobs:
           node-version: '22'
       - name: Install standalone demo dependencies
         working-directory: examples/x402-paid-api
-        run: npm install --no-audit --no-fund
-      - name: Validate both demo scripts
+        run: npm ci --no-audit --no-fund
+      - name: Validate scripts and run offline 402 smoke test
         working-directory: examples/x402-paid-api
-        run: npm run check
+        run: npm run check && npm test

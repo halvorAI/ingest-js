@@ -12,6 +12,10 @@ if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey ?? '')) {
 }
 const base = process.env.API_BASE_URL || 'http://localhost:4021';
 const target = new URL('/api/research', base).href;
+// Testnet demo guard: only pay a server on this machine unless explicitly overridden.
+if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname) && process.env.ALLOW_REMOTE_API !== '1') {
+  throw new Error(`Refusing to pay non-local API_BASE_URL (${new URL(base).host}). Set ALLOW_REMOTE_API=1 to override.`);
+}
 const payer = privateKeyToAccount(privateKey);
 const x402 = new x402Client();
 x402.setSpendControls({ maxAmountPerPayment: '$0.01' });
