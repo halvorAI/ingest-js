@@ -72,11 +72,11 @@ Create and register a source signing key using the published SDK instructions; s
 
 ## Release gates
 
-- [ ] Confirm the facilitator supports `eip155:84532` and `exact`.
-- [ ] Verify wallet and test USDC (no mainnet funds).
+- [x] Confirm the **local** facilitator supports `eip155:84532` and `exact` (public facilitator advertises support but failed settlement in this run).
+- [x] Verify the disposable payer wallet and Base Sepolia test USDC (no mainnet funds).
 - [x] Install the pinned package versions (`npm ci`, lockfile committed), run `npm run check` and `npm test`.
-- [ ] Exercise challenge, signed retry and successful testnet settlement.
-- [ ] Inspect observed `payment.requested`, `payment.authorized`, `payment.settled` events and no sensitive material in logs.
+- [x] Exercise challenge, signed retry and successful Base Sepolia settlement **via local facilitator** (10 Nov 2026, transaction linked above).
+- [x] Inspect observed `payment.requested`, `payment.authorized`, `payment.settled` offline-signed events and check logs for exposed keys (reported in PR QA).
 - [ ] Test sandbox ingestion and SDK flush if demonstrating cloud-side evidence.
 - [ ] Record and review the video before posting.
 
