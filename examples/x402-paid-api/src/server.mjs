@@ -78,8 +78,8 @@ export function createApp({ payTo, facilitatorUrl, halvor, allowInsecureFacilita
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  // x402 syncs supported kinds once at startup and does not retry, so wait for the
-  // facilitator to answer /supported first (matters when it was started just before us).
+  // Wait for the facilitator to answer /supported first. Otherwise the paid route returns
+  // 500 until the facilitator is up (it then recovers on a later request).
   const fUrl = process.env.FACILITATOR_URL;
   for (let attempt = 1; fUrl; attempt++) {
     try {
