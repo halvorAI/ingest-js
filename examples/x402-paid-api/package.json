@@ -1,0 +1,26 @@
+{
+  "name": "halvorai-x402-paid-api-demo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "pay": "node src/pay-client.mjs",
+    "check": "node --check src/server.mjs && node --check src/pay-client.mjs && node --check src/facilitator.mjs",
+    "test": "node --test test/smoke.test.mjs",
+    "facilitator": "node src/facilitator.mjs"
+  },
+  "dependencies": {
+    "@halvorai/ingest": "0.3.4",
+    "@x402/core": "2.30.0",
+    "@x402/evm": "2.30.0",
+    "@x402/express": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.22.3",
+    "jose": "^6.2.12",
+    "viem": "^2.37.0"
+  }
+}
