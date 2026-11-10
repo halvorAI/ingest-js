@@ -39,8 +39,10 @@ export function createApp({ payTo, facilitatorUrl, halvor, allowInsecureFacilita
   if (!/^0x[a-fA-F0-9]{40}$/.test(payTo ?? '')) {
     throw new Error('Set RECEIVER_ADDRESS to a valid Base Sepolia receiving address.');
   }
+  // HTTPS is required, except for a facilitator on this machine (src/facilitator.mjs).
+  const local = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(facilitatorUrl ?? '');
   const scheme = allowInsecureFacilitator ? /^https?:\/\// : /^https:\/\//;
-  if (!facilitatorUrl || !scheme.test(facilitatorUrl)) {
+  if (!facilitatorUrl || !(scheme.test(facilitatorUrl) || local)) {
     throw new Error('Set FACILITATOR_URL to an HTTPS x402 facilitator supporting Base Sepolia exact payments.');
   }
   const resourceServer = new x402ResourceServer(

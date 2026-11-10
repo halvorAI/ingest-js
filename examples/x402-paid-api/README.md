@@ -46,6 +46,16 @@ npm run pay
 
 Look for the `200` response, `PAYMENT-RESPONSE` settlement proof, a matching onchain test transaction and HalvorAI signed `HALVOR_EVENT` envelopes. If an x402 facilitator does not support the selected scheme/network, payment will not complete. This is expected, not a fake successful demo.
 
+## If the public facilitator fails: run a local one
+
+On 10 Nov 2026 the public `x402.org` facilitator failed three times with `invalid_exact_evm_transaction_failed`: its own signer got `replacement transaction underpriced`. For a dependable demo, run the bundled facilitator on your machine:
+
+1. Create a **separate** disposable Base Sepolia account for the facilitator signer, and fund it with a little Base Sepolia **test ETH** from a faucet. It pays the gas for `transferWithAuthorization`.
+2. In `.env`, set `FACILITATOR_SIGNER_PRIVATE_KEY` (never the payer key) and `FACILITATOR_URL=http://127.0.0.1:4022`.
+3. Run `npm run facilitator` in one terminal, `npm start` in a second and `npm run pay` in a third.
+
+The local facilitator registers only x402 v2 `exact` on `eip155:84532` and binds to `127.0.0.1`. It never holds funds: USDC moves directly from payer to receiver onchain. The resource server accepts a plain-HTTP facilitator URL only on localhost.
+
 ## Connect HalvorAI sandbox (optional)
 
 Create and register a source signing key using the published SDK instructions; set `HALVOR_API_KEY` and `HALVOR_SOURCE_KEY` via your **local environment**. Both must be present. Confirm accepted counts in the SDK stats and events in the HalvorAI dashboard. Offline events are signed but **not** proof of server-side acceptance.

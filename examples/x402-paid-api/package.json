@@ -8,8 +8,9 @@
   "scripts": {
     "start": "node src/server.mjs",
     "pay": "node src/pay-client.mjs",
-    "check": "node --check src/server.mjs && node --check src/pay-client.mjs",
-    "test": "node --test test/smoke.test.mjs"
+    "check": "node --check src/server.mjs && node --check src/pay-client.mjs && node --check src/facilitator.mjs",
+    "test": "node --test test/smoke.test.mjs",
+    "facilitator": "node src/facilitator.mjs"
   },
   "dependencies": {
     "@halvorai/ingest": "0.3.4",
