@@ -3,6 +3,7 @@ import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { generateSourceKeyPair, parseApiKey, type JWK } from '@halvorai/schema';
 import { HalvorClient } from '../client.js';
+import { postSource } from '../sources.js';
 
 const DASHBOARD_URL = 'https://app.halvorai.com';
 const SANDBOX_DASHBOARD_URL = 'https://app.sandbox.halvorai.com';
@@ -82,38 +83,6 @@ export function upsertEnvFile(filePath: string, vars: Record<string, string>): v
   writeFileSync(filePath, content, 'utf8');
 }
 
-async function registerSource(
-  fetchImpl: typeof fetch,
-  endpoint: string,
-  apiKey: string,
-  name: string,
-  publicJwk: JWK,
-): Promise<string> {
-  const url = `${endpoint.replace(/\/+$/, '')}/v1/sources`;
-  const res = await fetchImpl(url, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({
-      name,
-      adapter: 'custom',
-      public_jwk: publicJwk,
-    }),
-  });
-  if (res.status !== 201) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`POST /v1/sources failed (${res.status}): ${text || res.statusText}`);
-  }
-  const body = (await res.json()) as { id?: string };
-  if (typeof body.id !== 'string' || !body.id.startsWith('src_')) {
-    throw new Error('POST /v1/sources returned no source id');
-  }
-  return body.id;
-}
-
 /**
  * Non-interactive init used by the CLI and CI. Generates a source key, registers it,
  * writes `.env.local`, and sends one test event.
@@ -135,7 +104,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   const pair = await generateSourceKeyPair();
 
   log(`Registering source at ${endpoint}…`);
-  const sourceId = await registerSource(fetchImpl, endpoint, options.apiKey, name, pair.publicJwk);
+  const sourceId = await postSource(fetchImpl, endpoint, options.apiKey, name, pair.publicJwk);
   const privateJwk: JWK = { ...pair.privateJwk, kid: sourceId };
 
   const envPath = join(cwd, '.env.local');

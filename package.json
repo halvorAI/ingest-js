@@ -1,6 +1,6 @@
 {
   "name": "@halvorai/ingest",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "Signed, attributed payment events for AI agents. Never in the payment path.",
   "type": "module",
   "author": "HalvorAI <hello@halvorai.com>",
@@ -53,6 +53,10 @@
     "./mcp": {
       "types": "./dist/mcp.d.ts",
       "default": "./dist/mcp.js"
+    },
+    "./device": {
+      "types": "./dist/device.d.ts",
+      "default": "./dist/device.js"
     },
     "./evidence": {
       "types": "./dist/evidence.d.ts",
