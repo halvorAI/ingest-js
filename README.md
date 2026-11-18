@@ -154,9 +154,13 @@ npm run smoke   # packs the tarball, installs it in an empty project, emits one 
 
 `vendor/` holds the parts of the HalvorAI schema core the SDK uses (event model, canonical JSON, signing). They are bundled into `dist/` at build time, so the package has no internal dependencies.
 
+## Contributing
+
+Bug fixes, tests, offline examples and doc fixes are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the checks CI runs and how quickly we respond. Starter tasks are labeled [`good first issue`](https://github.com/halvorAI/ingest-js/labels/good%20first%20issue).
+
 ## Security
 
-Report vulnerabilities privately to hello@halvorai.com.
+Report vulnerabilities privately to hello@halvorai.com, not in public issues. See [SECURITY.md](SECURITY.md).
 
 ## License
 
