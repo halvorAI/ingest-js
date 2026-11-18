@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 572" width="860" height="572" role="img" aria-labelledby="t">
+<title id="t">Output of npx @halvorai/ingest demo: an event signed and verified, a sample evidence pack that passes, and the same pack failing after one byte changes</title>
+<style>
+text{font:13px 'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;opacity:0;animation:in .01s forwards}
+@keyframes in{to{opacity:1}}
+@media (prefers-reduced-motion:reduce){text{animation:none;opacity:1}}
+.n,.v{fill:#F3EFE6}.p{fill:#A39E91}.hd{fill:#F3EFE6;font-weight:700}.ok,.v{fill:#C6F432}.bad{fill:#F0624D}
+</style>
+<rect width="860" height="572" rx="10" fill="#1C1C1C"/>
+<circle cx="22" cy="20" r="6" fill="#3A3A36"/><circle cx="42" cy="20" r="6" fill="#3A3A36"/><circle cx="62" cy="20" r="6" fill="#3A3A36"/>
+<text class="p" x="20" y="52" style="animation-delay:0.00s">$ npx @halvorai/ingest demo</text>
+<text class="hd" x="20" y="72" style="animation-delay:0.18s">1. Sign an event on this machine</text>
+<text class="n" x="20" y="92" style="animation-delay:0.36s">   evt_01KDEMO0000000000000000000: Travel booking agent paid Example Airways 412.00 USD on stripe</text>
+<text class="n" x="20" y="112" style="animation-delay:0.54s">   Instruction sent as sha256:3645911b116c…, never as text</text>
+<text class="v" x="20" y="132" style="animation-delay:0.72s">   Ed25519 signature: verified</text>
+<text class="n" x="20" y="152" style="animation-delay:0.90s"></text>
+<text class="hd" x="20" y="172" style="animation-delay:1.08s">2. Verify a sample evidence pack offline (synthetic data)</text>
+<text class="ok" x="20" y="192" style="animation-delay:1.26s">   PASS: Evidence pack pck_01DEMO00000000000000000000 passed verification.</text>
+<text class="v" x="20" y="212" style="animation-delay:1.44s">   Manifest: Manifest signature verified</text>
+<text class="v" x="20" y="232" style="animation-delay:1.62s">   Files: 7 file hashes verified</text>
+<text class="v" x="20" y="252" style="animation-delay:1.80s">   Events: 3 of 3 event signatures verified</text>
+<text class="v" x="20" y="272" style="animation-delay:1.98s">   Chain: 3 of 3 included chain positions verified</text>
+<text class="v" x="20" y="292" style="animation-delay:2.16s">   Anchors: 1 of 1 daily anchors verified</text>
+<text class="n" x="20" y="312" style="animation-delay:2.34s"></text>
+<text class="hd" x="20" y="332" style="animation-delay:2.52s">3. Change one byte of events.jsonl and verify again</text>
+<text class="bad" x="20" y="352" style="animation-delay:2.70s">   FAIL: Evidence pack verification failed with 2 issues.</text>
+<text class="v" x="20" y="372" style="animation-delay:2.88s">   Manifest: Manifest signature verified</text>
+<text class="bad" x="20" y="392" style="animation-delay:3.06s">   Files: 1 file integrity check failed</text>
+<text class="v" x="20" y="412" style="animation-delay:3.24s">   Events: 2 of 3 event signatures verified</text>
+<text class="v" x="20" y="432" style="animation-delay:3.42s">   Chain: 3 of 3 included chain positions verified</text>
+<text class="v" x="20" y="452" style="animation-delay:3.60s">   Anchors: 1 of 1 daily anchors verified</text>
+<text class="bad" x="20" y="472" style="animation-delay:3.78s">   - events.jsonl sha256 does not match manifest</text>
+<text class="bad" x="20" y="492" style="animation-delay:3.96s">   - Event evt_01JA8Q4K3T9V2C7M5N6P8R0S1W canonical sha256 does not match chain.json</text>
+<text class="n" x="20" y="512" style="animation-delay:4.14s"></text>
+<text class="n" x="20" y="532" style="animation-delay:4.32s">Next: npx @halvorai/ingest verify-pack &lt;pack.zip&gt; --jwks &lt;keys.json&gt; checks a real pack.</text>
+</svg>

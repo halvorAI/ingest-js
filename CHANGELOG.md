@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+- `npx @halvorai/ingest demo`: signs one event with a fresh local key, verifies a bundled sample evidence pack offline, then changes one byte and shows the same check fail. No account or API key. The sample pack (`samples/sample-pack.zip`) and its public key (`samples/sample-pack-keys.json`) are synthetic and ship in the package.
+
 ## 0.3.4
 
 ### Added

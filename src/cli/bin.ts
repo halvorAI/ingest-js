@@ -2,13 +2,16 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { runInit } from './init.js';
+import { runDemo } from './demo.js';
 import { runVerifyPack } from './verify-pack.js';
 
 function usage(code = 2): never {
   console.log(`Usage:
+  npx @halvorai/ingest demo
   npx @halvorai/ingest init [--api-key hk_test_…] [--endpoint URL] [--dashboard URL] [--name NAME] [--cwd DIR]
   npx @halvorai/ingest verify-pack <pack.zip> [--jwks FILE_OR_URL]
 
+demo signs one event and verifies a sample evidence pack offline. No account needed.
 init registers a source key, writes .env.local (with HALVOR_ENDPOINT when --endpoint is given),
 and sends one test event.
 verify-pack verifies an evidence pack locally. If --jwks is omitted, it fetches the
@@ -43,6 +46,11 @@ async function main(argv: string[]): Promise<void> {
   const command = argv[0];
   if (command === undefined) usage();
   if (command === 'help' || command === '--help' || command === '-h') usage(0);
+  if (command === 'demo') {
+    const result = await runDemo();
+    if (!result.eventVerified || !result.samplePassed || !result.tamperedFailed) process.exitCode = 1;
+    return;
+  }
   if (command === 'verify-pack') {
     const rest = argv.slice(1);
     const zipPath = rest[0];

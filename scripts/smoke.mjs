@@ -53,6 +53,11 @@ console.log('import + offline emit OK');
   const out = bin.stdout.toString();
   if (bin.status !== 2 || !out.includes('Usage')) throw new Error(`CLI usage check failed (exit ${bin.status}): ${out}${bin.stderr}`);
   console.log('CLI OK');
+
+  const demo = spawnSync(process.execPath, [join(work, 'node_modules', '@halvorai', 'ingest', 'dist', 'bin.js'), 'demo'], { cwd: work });
+  const demoOut = demo.stdout.toString();
+  if (demo.status !== 0 || !demoOut.includes('PASS: Evidence pack') || !demoOut.includes('FAIL: Evidence pack')) throw new Error(`demo failed (exit ${demo.status}): ${demoOut}${demo.stderr}`);
+  console.log('demo OK');
   console.log('smoke passed');
 } finally {
   rmSync(work, { recursive: true, force: true });
