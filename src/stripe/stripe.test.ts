@@ -62,6 +62,21 @@ describe('mapStripeEvent (fixtures from Stripe test-mode shapes)', () => {
     ).toBeUndefined();
   });
 
+  it('labels the owner type unknown when the metadata has an owner id but no type (#99)', () => {
+    const base = loadFixture('payment_intent.succeeded.json');
+    const obj = (base.data as { object: { metadata?: Record<string, string> } }).object;
+    obj.metadata = { ...obj.metadata, halvor_owner_id: 'own_known' };
+    delete obj.metadata['halvor_owner_type'];
+    const noType = mapStripeEvent(base);
+    expect(noType?.owner).toEqual({ id: 'own_known', type: 'business' });
+    expect(noType?.labels).toEqual({ owner_type: 'unknown' });
+
+    obj.metadata['halvor_owner_type'] = 'person';
+    const withType = mapStripeEvent(base);
+    expect(withType?.owner).toEqual({ id: 'own_known', type: 'person' });
+    expect(withType?.labels).toBeUndefined();
+  });
+
   it('uses unattributed when metadata is missing', () => {
     const mapped = mapStripeEvent(loadFixture('unattributed.json'));
     expect(mapped?.agent.id).toBe('unattributed');

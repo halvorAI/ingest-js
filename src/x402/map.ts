@@ -47,7 +47,7 @@ export interface X402SettlementResponse {
 export type X402Adapter = 'x402-client' | 'x402-server';
 
 export interface MappedX402Event {
-  /** Set on `payment.requested`, so the authorized event can link to it. */
+  /** Chosen by the mapper because some payment ids contain it, and so the authorized event can link to a request. */
   id?: string;
   type: string;
   source: { adapter: X402Adapter };
@@ -104,12 +104,29 @@ function amountOf(accept: X402Accept, override?: string): Record<string, unknown
  * Agent and owner for a mapped event. When the caller set them with `withAgentContext`, they are
  * left out so the client fills the full context (name, framework, country, …) at emit time.
  */
-function attribution(payerWallet?: string): Pick<MappedX402Event, 'agent' | 'owner'> {
+function attribution(): Pick<MappedX402Event, 'agent' | 'owner'> {
   const ctx = currentContext();
   const out: Pick<MappedX402Event, 'agent' | 'owner'> = {};
-  if (ctx?.agent === undefined) out.agent = { id: payerWallet ?? 'unattributed' };
+  // The payer wallet is never the agent id: it does not say which agent paid and would count the
+  // payment as attributed. It stays in `instrument.wallet`.
+  if (ctx?.agent === undefined) out.agent = { id: 'unattributed' };
   if (ctx?.owner === undefined) out.owner = { id: 'unattributed', type: 'business' };
   return out;
+}
+
+/**
+ * `x402:<network>:<nonce>` joins a payment's authorization, settlement and failure. Without a
+ * nonce the id falls back to the transaction hash, which is unique and stable across retries of
+ * one settlement but will not join a payer-side record that has the nonce. Without either it is
+ * the event id, so unrelated payments never share an id.
+ */
+function paymentIdFor(
+  network: string,
+  parts: { nonce?: string | undefined; txHash?: string | undefined; eventId: string },
+): string {
+  if (parts.nonce) return `x402:${network}:${parts.nonce}`;
+  if (parts.txHash) return `x402:${network}:tx:${parts.txHash}`;
+  return `x402:${network}:event:${parts.eventId}`;
 }
 
 function payeeFromAccept(
@@ -187,22 +204,24 @@ export function mapPaymentPayload(
   const accept = payload.accepted;
   if (accept === undefined) return undefined;
   const auth = payload.payload?.authorization;
-  const nonce = auth?.nonce ?? 'unknown';
+  const nonce = auth?.nonce;
   const network = accept.network ?? 'unknown';
   const payer = auth?.from;
-  const attr = attribution(payer);
+  const attr = attribution();
+  const id = newId('evt');
   const payment: Record<string, unknown> = {
-    payment_id: `x402:${network}:${nonce}`,
+    payment_id: paymentIdFor(network, { nonce, eventId: id }),
     rail: 'x402',
     amount: amountOf(accept, auth?.value),
     status: 'authorized',
-    rail_ref: railRef(accept, { nonce }),
+    rail_ref: railRef(accept, nonce === undefined ? {} : { nonce }),
   };
   const description = payload.resource?.description;
   if (description !== undefined) payment['description'] = description.slice(0, 256);
 
   const evidenceValue = payload as unknown as Record<string, unknown>;
   const mapped: MappedX402Event = {
+    id,
     type: 'payment.authorized',
     source: { adapter },
     ...attr,
@@ -246,11 +265,15 @@ export function mapSettlementResponse(
     if (settlement.amount !== undefined) accept.amount = settlement.amount;
   }
   const network = settlement.network ?? accept.network ?? 'unknown';
-  const nonce = context.nonce ?? 'unknown';
-  const attr = attribution(settlement.payer);
+  const attr = attribution();
+  const id = newId('evt');
   const success = settlement.success === true;
   const payment: Record<string, unknown> = {
-    payment_id: `x402:${network}:${nonce}`,
+    payment_id: paymentIdFor(network, {
+      nonce: context.nonce,
+      txHash: settlement.transaction,
+      eventId: id,
+    }),
     rail: 'x402',
     amount: amountOf(accept, settlement.amount ?? accept.amount),
     status: success ? 'settled' : 'failed',
@@ -269,6 +292,7 @@ export function mapSettlementResponse(
   if (!isRecord(evidenceValue)) return undefined;
 
   const mapped: MappedX402Event = {
+    id,
     type: success ? 'payment.settled' : 'payment.failed',
     source: { adapter },
     ...attr,

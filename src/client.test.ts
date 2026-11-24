@@ -844,3 +844,35 @@ describe('card numbers in payee URLs and label keys', () => {
     await client.close({ timeoutMs: 100 });
   });
 });
+
+describe('unknown owner (halvorAI/halvorai-app#99)', () => {
+  const sendOne = async (input: Record<string, unknown>) => {
+    const { client, srv } = makeClient();
+    client.emit(input);
+    await client.flush();
+    return allSent(srv)[0]?.event;
+  };
+
+  it('labels an event whose owner is unattributed, since the type is only a placeholder', async () => {
+    const event = await sendOne(base);
+    expect(event?.owner).toEqual({ id: 'unattributed', type: 'business' });
+    expect(event?.labels).toMatchObject({ owner_type: 'unknown' });
+  });
+
+  it('labels an adapter event that passes the unattributed owner itself', async () => {
+    const event = await sendOne({ ...base, owner: { id: 'unattributed', type: 'business' } });
+    expect(event?.labels).toMatchObject({ owner_type: 'unknown' });
+  });
+
+  it('does not label an event with a real owner', async () => {
+    const event = await sendOne({ ...base, owner: { id: 'own_real', type: 'person' } });
+    expect(event?.labels?.['owner_type']).toBeUndefined();
+  });
+
+  it('keeps the labels the caller set, and does not overwrite their owner_type', async () => {
+    const mixed = await sendOne({ ...base, labels: { team: 'growth' } });
+    expect(mixed?.labels).toEqual({ team: 'growth', owner_type: 'unknown' });
+    const own = await sendOne({ ...base, labels: { owner_type: 'person' } });
+    expect(own?.labels).toEqual({ owner_type: 'person' });
+  });
+});

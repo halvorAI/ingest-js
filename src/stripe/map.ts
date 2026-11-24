@@ -10,6 +10,8 @@ export interface MappedStripeEvent {
   agent: { id: string; name?: string; framework?: string };
   owner: { id: string; type: 'person' | 'business' };
   instruction?: { id: string; hash: string };
+  /** `owner_type: unknown` when the metadata did not say whether the owner is a person or a business. */
+  labels?: Record<string, string>;
   payment: Record<string, unknown>;
   payee: Record<string, unknown>;
   instrument?: Record<string, unknown>;
@@ -70,19 +72,24 @@ function attribution(meta: StripeMetadata): {
   agent: { id: string; name?: string; framework?: string };
   owner: { id: string; type: 'person' | 'business' };
   instruction?: { id: string; hash: string };
+  labels?: Record<string, string>;
 } {
   const agentId = meta['halvor_agent_id'] ?? 'unattributed';
   const ownerId = meta['halvor_owner_id'] ?? 'unattributed';
-  const ownerType = meta['halvor_owner_type'] === 'person' ? 'person' : 'business';
+  const declared = meta['halvor_owner_type'];
+  const ownerType = declared === 'person' ? 'person' : 'business';
+  const typeKnown = declared === 'person' || declared === 'business';
   const instructionId = meta['halvor_instruction_id'];
   const result: {
     agent: { id: string; name?: string; framework?: string };
     owner: { id: string; type: 'person' | 'business' };
     instruction?: { id: string; hash: string };
+    labels?: Record<string, string>;
   } = {
     agent: { id: agentId },
     owner: { id: ownerId, type: ownerType },
   };
+  if (!typeKnown) result.labels = { owner_type: 'unknown' };
   const agentName = meta['halvor_agent_name'];
   const framework = meta['halvor_agent_framework'];
   if (agentName !== undefined && agentName !== '') result.agent.name = agentName.slice(0, 128);
@@ -195,6 +202,7 @@ function mapPaymentIntent(
   const at = occurredAt(event);
   if (at !== undefined) mapped.occurred_at = at;
   if (attr.instruction !== undefined) mapped.instruction = attr.instruction;
+  if (attr.labels !== undefined) mapped.labels = attr.labels;
   if (spt !== undefined) mapped.instrument = { type: 'stripe_spt' };
   return mapped;
 }
@@ -232,6 +240,7 @@ function mapChargeRefunded(
   const at = occurredAt(event);
   if (at !== undefined) mapped.occurred_at = at;
   if (attr.instruction !== undefined) mapped.instruction = attr.instruction;
+  if (attr.labels !== undefined) mapped.labels = attr.labels;
   return mapped;
 }
 
@@ -267,6 +276,7 @@ function mapDispute(event: StripeEventLike, obj: Record<string, unknown>): Mappe
   const at = occurredAt(event);
   if (at !== undefined) mapped.occurred_at = at;
   if (attr.instruction !== undefined) mapped.instruction = attr.instruction;
+  if (attr.labels !== undefined) mapped.labels = attr.labels;
   return mapped;
 }
 
@@ -309,6 +319,7 @@ function mapIssuingAuthorization(
   const at = occurredAt(event);
   if (at !== undefined) mapped.occurred_at = at;
   if (attr.instruction !== undefined) mapped.instruction = attr.instruction;
+  if (attr.labels !== undefined) mapped.labels = attr.labels;
 
   const card = obj['card'];
   if (isRecord(card)) {
@@ -365,6 +376,7 @@ function mapIssuingTransaction(
   const at = occurredAt(event);
   if (at !== undefined) mapped.occurred_at = at;
   if (attr.instruction !== undefined) mapped.instruction = attr.instruction;
+  if (attr.labels !== undefined) mapped.labels = attr.labels;
   return mapped;
 }
 
