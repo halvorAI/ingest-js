@@ -382,7 +382,7 @@ describe('x402 data quality (JS-6, JS-7, payment ids)', () => {
     expect(mapped?.owner).toBeUndefined();
   });
 
-  it('falls back to the payer wallet as the agent when there is no context', () => {
+  it('never uses the payer wallet as the agent id (halvorAI/halvorai-app#97)', () => {
     const mapped = mapPaymentPayload(
       {
         accepted: accept,
@@ -390,8 +390,21 @@ describe('x402 data quality (JS-6, JS-7, payment ids)', () => {
       },
       'x402-client',
     );
-    expect(mapped?.agent).toEqual({ id: '0xpayer' });
+    expect(mapped?.agent).toEqual({ id: 'unattributed' });
     expect(mapped?.owner).toEqual({ id: 'unattributed', type: 'business' });
+    expect(mapped?.instrument).toMatchObject({ wallet: { address: '0xpayer' } });
+  });
+
+  it('does not use the payer wallet as the agent id on a settlement either', () => {
+    const mapped = mapSettlementResponse(
+      { success: true, network: 'eip155:8453', payer: '0xpayer', transaction: '0xtx' },
+      settlementContext({
+        accept: { scheme: 'exact', network: 'eip155:8453', asset: '0xabc', amount: '10000' },
+      }),
+      'x402-server',
+    );
+    expect(mapped?.agent).toEqual({ id: 'unattributed' });
+    expect(mapped?.instrument).toMatchObject({ wallet: { address: '0xpayer' } });
   });
 
   it('refuses to guess a missing network or asset', () => {
@@ -412,5 +425,54 @@ describe('x402 data quality (JS-6, JS-7, payment ids)', () => {
     expect(a).not.toBe(b);
     const mapped = mapPaymentRequired(required, 'x402-client');
     expect(mapped?.payment['payment_id']).toBe(`x402:eip155:8453:requested:${mapped?.id}`);
+  });
+});
+
+describe('payment ids without a nonce (halvorAI/halvorai-app#98)', () => {
+  const ACCEPT = { scheme: 'exact', network: 'eip155:8453', asset: '0xabc', amount: '10000' };
+  const settle = (tx: string | undefined): X402SettlementResponse => ({
+    success: true,
+    network: 'eip155:8453',
+    ...(tx === undefined ? {} : { transaction: tx }),
+  });
+  const id = (m: ReturnType<typeof mapSettlementResponse>) => m?.payment['payment_id'];
+
+  it('gives two settlements without a nonce different ids, and a retry the same id', () => {
+    const a = mapSettlementResponse(settle('0xaaa'), settlementContext({ accept: ACCEPT }), 'x402-server');
+    const b = mapSettlementResponse(settle('0xbbb'), settlementContext({ accept: ACCEPT }), 'x402-server');
+    const retry = mapSettlementResponse(settle('0xaaa'), settlementContext({ accept: ACCEPT }), 'x402-server');
+    expect(id(a)).toBe('x402:eip155:8453:tx:0xaaa');
+    expect(id(b)).toBe('x402:eip155:8453:tx:0xbbb');
+    expect(id(retry)).toBe(id(a));
+  });
+
+  it('keeps the nonce form when the nonce is known, even with a tx hash', () => {
+    const mapped = mapSettlementResponse(
+      settle('0xaaa'),
+      settlementContext({ accept: ACCEPT, nonce: '0xn1' }),
+      'x402-server',
+    );
+    expect(id(mapped)).toBe('x402:eip155:8453:0xn1');
+  });
+
+  it('falls back to the event id when there is neither nonce nor tx hash', () => {
+    const a = mapSettlementResponse(settle(undefined), settlementContext({ accept: ACCEPT }), 'x402-server');
+    const b = mapSettlementResponse(settle(undefined), settlementContext({ accept: ACCEPT }), 'x402-server');
+    expect(String(id(a))).toMatch(/^x402:eip155:8453:event:evt_/);
+    expect(id(a)).not.toBe(id(b));
+    expect(id(a)).toBe(`x402:eip155:8453:event:${a?.id}`);
+  });
+
+  it('never produces the shared :unknown id for a payload without a nonce', () => {
+    const payload = load<X402PaymentPayload>('payment-payload.json');
+    const authorization = { ...payload.payload?.authorization };
+    delete authorization.nonce;
+    const mapped = mapPaymentPayload(
+      { ...payload, payload: { ...payload.payload, authorization } },
+      'x402-server',
+    );
+    expect(String(mapped?.payment['payment_id'])).not.toMatch(/:unknown$/);
+    expect(mapped?.payment['payment_id']).toBe(`x402:eip155:84532:event:${mapped?.id}`);
+    expect(mapped?.payment['rail_ref']).not.toHaveProperty('nonce');
   });
 });

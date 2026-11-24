@@ -161,6 +161,28 @@ function buildInstruction(raw: unknown): Record<string, unknown> | undefined {
   return out;
 }
 
+const MAX_LABELS = 20;
+
+/**
+ * APE v0.1 requires `owner.type`, so an owner nobody knows still carries a placeholder type.
+ * The label tells a reader the type is not a fact. The caller's own `owner_type` label wins.
+ * (halvorAI/halvorai-app#99; APE v0.2 is expected to allow `owner.type: "unknown"`.)
+ */
+function withUnknownOwnerLabel(owner: unknown, labels: unknown): unknown {
+  const unknownOwner =
+    owner !== null && typeof owner === 'object' && (owner as { id?: unknown }).id === 'unattributed';
+  if (!unknownOwner) return labels;
+  const given =
+    labels !== null && typeof labels === 'object' && !Array.isArray(labels)
+      ? (labels as Record<string, unknown>)
+      : undefined;
+  if (labels !== undefined && given === undefined) return labels;
+  if (given !== undefined && ('owner_type' in given || Object.keys(given).length >= MAX_LABELS)) {
+    return labels;
+  }
+  return { ...given, owner_type: 'unknown' };
+}
+
 export class HalvorClient {
   private readonly apiKey: string | undefined;
   private readonly sourceJwk: JWK | undefined;
@@ -538,7 +560,8 @@ export class HalvorClient {
     if (input['instrument'] !== undefined) event['instrument'] = input['instrument'];
     if (input['evidence'] !== undefined) event['evidence'] = input['evidence'];
     if (input['related'] !== undefined) event['related'] = input['related'];
-    if (input['labels'] !== undefined) event['labels'] = input['labels'];
+    const labels = withUnknownOwnerLabel(event['owner'], input['labels']);
+    if (labels !== undefined) event['labels'] = labels;
     return event;
   }
 
