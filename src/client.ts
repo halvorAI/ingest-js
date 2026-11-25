@@ -1,6 +1,8 @@
 import {
-  ApeEventSchema,
+  AnyApeEventSchema,
   evidenceSha256,
+  normaliseInstructionText,
+  v02FieldsUsed,
   newId,
   nowUtc,
   parseApiKey,
@@ -158,30 +160,25 @@ function buildInstruction(raw: unknown): Record<string, unknown> | undefined {
   if (typeof obj['channel'] === 'string') out['channel'] = obj['channel'];
   if (typeof obj['issued_at'] === 'string') out['issued_at'] = obj['issued_at'];
   if (typeof obj['tool_call_id'] === 'string') out['tool_call_id'] = obj['tool_call_id'];
+  // APE v0.2: `normalise: true` adds a hash of the ws-lower-v1 form, so two runs of one task match.
+  if (typeof obj['normalised_hash'] === 'string') {
+    out['normalised_hash'] = obj['normalised_hash'];
+    out['normalisation'] = obj['normalisation'] ?? 'ws-lower-v1';
+  } else if (obj['normalise'] === true && typeof text === 'string') {
+    out['normalised_hash'] = hashInstruction(normaliseInstructionText(text));
+    out['normalisation'] = 'ws-lower-v1';
+  }
   return out;
 }
 
-const MAX_LABELS = 20;
-
 /**
- * APE v0.1 requires `owner.type`, so an owner nobody knows still carries a placeholder type.
- * The label tells a reader the type is not a fact. The caller's own `owner_type` label wins.
- * (halvorAI/halvorai-app#99; APE v0.2 is expected to allow `owner.type: "unknown"`.)
+ * The owner when the caller names none. APE v0.2 says so with `type: "unknown"` instead of the
+ * v0.1 placeholder `business` plus an `owner_type` label (halvorAI/halvorai-app#99).
  */
-function withUnknownOwnerLabel(owner: unknown, labels: unknown): unknown {
-  const unknownOwner =
-    owner !== null && typeof owner === 'object' && (owner as { id?: unknown }).id === 'unattributed';
-  if (!unknownOwner) return labels;
-  const given =
-    labels !== null && typeof labels === 'object' && !Array.isArray(labels)
-      ? (labels as Record<string, unknown>)
-      : undefined;
-  if (labels !== undefined && given === undefined) return labels;
-  if (given !== undefined && ('owner_type' in given || Object.keys(given).length >= MAX_LABELS)) {
-    return labels;
-  }
-  return { ...given, owner_type: 'unknown' };
-}
+const UNKNOWN_OWNER = { id: 'unattributed', type: 'unknown', unknown_reason: 'not_provided' };
+
+/** Top-level APE v0.2 fields an `emit()` input may carry as they are. */
+const V02_PASS_THROUGH = ['attribution_gaps', 'delivery', 'report'] as const;
 
 export class HalvorClient {
   private readonly apiKey: string | undefined;
@@ -320,6 +317,35 @@ export class HalvorClient {
       ...this.statsInternal,
       queued: this.rawQueue.length + this.readyQueue.length,
     };
+  }
+
+  /**
+   * APE v0.2 `agent.reported`: what the agent told its owner about an instruction, so HalvorAI can
+   * line it up with the payments made for it. `report.body_sha256` is required; pass `body` to
+   * have it hashed here (the text itself is not sent).
+   */
+  emitReport(input: {
+    instruction: Record<string, unknown>;
+    report: {
+      body?: string;
+      body_sha256?: string;
+      channel?: 'chat' | 'api' | 'email' | 'other';
+      summary?: string;
+      payments_claimed?: number;
+      amount_claimed?: Record<string, unknown>;
+    };
+    agent?: Record<string, unknown>;
+    owner?: Record<string, unknown>;
+    occurred_at?: string;
+    labels?: Record<string, string>;
+    source?: Record<string, unknown>;
+  }): string {
+    const { body, ...rest } = input.report;
+    const report = { ...rest };
+    if (report.body_sha256 === undefined && body !== undefined) {
+      report.body_sha256 = hashInstruction(body);
+    }
+    return this.emit({ ...input, type: 'agent.reported', report });
   }
 
   emit(input: unknown): string {
@@ -503,7 +529,7 @@ export class HalvorClient {
     try {
       const event = this.buildEvent(pending);
       this.redactEvent(event);
-      const parsed = ApeEventSchema.safeParse(event);
+      const parsed = AnyApeEventSchema.safeParse(event);
       if (!parsed.success) {
         this.statsInternal.droppedInvalid++;
         this.report({
@@ -552,16 +578,23 @@ export class HalvorClient {
           : {}),
       },
       agent: input['agent'] ?? ctx?.agent ?? { id: 'unattributed' },
-      owner: input['owner'] ?? ctx?.owner ?? { id: 'unattributed', type: 'business' },
-      payment: input['payment'],
-      payee: input['payee'],
+      owner: input['owner'] ?? ctx?.owner ?? { ...UNKNOWN_OWNER },
     };
+    // An agent report (APE v0.2) is not a payment: it has no payment or payee.
+    if (input['type'] !== 'agent.reported') {
+      event['payment'] = input['payment'];
+      event['payee'] = input['payee'];
+    }
     if (instruction) event['instruction'] = instruction;
     if (input['instrument'] !== undefined) event['instrument'] = input['instrument'];
     if (input['evidence'] !== undefined) event['evidence'] = input['evidence'];
     if (input['related'] !== undefined) event['related'] = input['related'];
-    const labels = withUnknownOwnerLabel(event['owner'], input['labels']);
-    if (labels !== undefined) event['labels'] = labels;
+    if (input['labels'] !== undefined) event['labels'] = input['labels'];
+    for (const key of V02_PASS_THROUGH) {
+      if (input[key] !== undefined) event[key] = input[key];
+    }
+    // v0.1 unless the event uses a v0.2 field, so plain events stay readable by v0.1 receivers.
+    event['ape_version'] = v02FieldsUsed(event).length > 0 ? '0.2' : '0.1';
     return event;
   }
 
@@ -580,6 +613,8 @@ export class HalvorClient {
       ['payee', 'website'],
       ['payee', 'resource_url'],
       ['instruction', 'summary'],
+      ['report', 'summary'],
+      ['delivery', 'summary'],
     ] as const) {
       const parent = event[path[0]];
       if (parent && typeof parent === 'object') {

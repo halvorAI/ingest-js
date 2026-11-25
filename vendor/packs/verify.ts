@@ -306,7 +306,13 @@ async function verifyEventSignature(line: EventLine, chainEvent: ChainEvent): Pr
   const key = await importJWK(chainEvent.source.public_jwk, 'EdDSA');
   const attached = `${header}.${base64Url(encoder.encode(canonicalize(line.event)))}.${signature}`;
   const verified = await compactVerify(attached, key, { algorithms: ['EdDSA'] });
-  return verified.protectedHeader.typ === 'ape+jws' && verified.protectedHeader.ape === '0.1';
+  // The header `ape` names the event's version (0.1, or 0.2 since APE v0.2).
+  const version = typeof line.event['ape_version'] === 'string' ? line.event['ape_version'] : '0.1';
+  return (
+    verified.protectedHeader.typ === 'ape+jws' &&
+    (version === '0.1' || version === '0.2') &&
+    verified.protectedHeader.ape === version
+  );
 }
 
 function eventEnvironment(event: Record<string, unknown>): 'test' | 'live' | null {

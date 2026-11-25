@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { evidenceSha256 } from '@halvorai/schema';
 import { describe, expect, it } from 'vitest';
 import { ap2, sdJwtFormat, tap, vi } from './helpers.js';
@@ -85,5 +86,29 @@ describe('tap.fromRequest', () => {
       '@path': '/v1/pay',
     });
     expect(item.sha256).toBe(evidenceSha256(value));
+  });
+});
+
+describe('APE v0.2 evidence helpers', () => {
+  it('hashes a tool response and leaves the body out unless asked', async () => {
+    const { tool } = await import('./helpers.js');
+    const e = tool.response({ tool: 'pay_invoice', body: '{"status":"failed"}', callId: 'call_1' });
+    expect(e.kind).toBe('tool.response');
+    expect(e.value).toEqual({
+      tool: 'pay_invoice',
+      call_id: 'call_1',
+      body_sha256: 'sha256:' + createHash('sha256').update('{"status":"failed"}').digest('hex'),
+    });
+    expect(tool.response({ tool: 't', body: 'x', includeBody: true }).value).toMatchObject({ body: 'x' });
+  });
+
+  it('packages a chain receipt', async () => {
+    const { chain } = await import('./helpers.js');
+    const e = chain.receipt({ network: 'eip155:8453', txHash: '0xabc', blockNumber: 7, logIndex: 1 });
+    expect(e).toMatchObject({
+      kind: 'chain.receipt',
+      format: 'json',
+      value: { network: 'eip155:8453', tx_hash: '0xabc', block_number: 7, log_index: 1 },
+    });
   });
 });

@@ -5,7 +5,7 @@
 <a href="https://www.npmjs.com/package/@halvorai/ingest"><img height="16" alt="npm" src="https://img.shields.io/npm/v/@halvorai/ingest?style=flat-square&label=npm&color=4A6100"></a>
 <a href="https://www.npmjs.com/package/@halvorai/ingest"><img height="16" alt="Downloads" src="https://img.shields.io/npm/dm/@halvorai/ingest?style=flat-square&label=downloads&color=4A6100"></a>
 <a href="https://github.com/halvorAI/ingest-js/blob/main/LICENSE"><img height="16" alt="License" src="https://img.shields.io/badge/license-Apache--2.0-4A6100?style=flat-square"></a>
-<a href="https://github.com/halvorAI/ape-schema"><img height="16" alt="APE v0.1" src="https://img.shields.io/badge/APE-v0.1-C6F432?style=flat-square&labelColor=1C1C1C"></a>
+<a href="https://github.com/halvorAI/ape-schema"><img height="16" alt="APE v0.2" src="https://img.shields.io/badge/APE-v0.2-C6F432?style=flat-square&labelColor=1C1C1C"></a>
 </p>
 
 Signed, attributed payment events for AI agents. Each event records which agent paid, for which owner, on which instruction, with the network proof that came with the payment.
@@ -162,7 +162,7 @@ With `spoolDir`, events that cannot be delivered during an outage are written to
 | `@halvorai/ingest/x402` | Wrap the paying client or the resource server |
 | `@halvorai/ingest/mpp` | Observe MPP charges and receipts |
 | `@halvorai/ingest/mcp` | Attribute payments made through MCP tool calls |
-| `@halvorai/ingest/evidence` | Attach AP2, Verifiable Intent and Visa TAP proofs verbatim |
+| `@halvorai/ingest/evidence` | Attach AP2, Verifiable Intent and Visa TAP proofs verbatim, and record tool responses and chain receipts |
 
 For Stripe Issuing, tag one card per agent. Card events carry no agent name of their own, so pass it here:
 
@@ -206,7 +206,8 @@ It checks the manifest signature, every file hash, every event signature and the
 | Record Stripe or Stripe Issuing payments | [`@halvorai/ingest/stripe`](https://docs.halvorai.com) |
 | Record x402 payments | [`@halvorai/ingest/x402`](https://docs.halvorai.com) and the [paid API example](examples/x402-paid-api/) |
 | Attach AP2, Verifiable Intent or Visa TAP proofs | [`@halvorai/ingest/evidence`](https://docs.halvorai.com) |
-| Look up an event field | [APE v0.1 fields](https://github.com/halvorAI/ape-schema/blob/main/docs/FIELDS.md) |
+| Look up an event field | [APE fields](https://github.com/halvorAI/ape-schema/blob/main/docs/FIELDS.md) |
+| Record what the agent told its owner | [`emitReport`](https://docs.halvorai.com/sdks/typescript/#agent-reports) |
 | Use Python instead | [`ingest-python`](https://github.com/halvorAI/ingest-python) |
 
 ## Develop
