@@ -5,7 +5,13 @@ import { canonicalize } from './canonical.js';
 
 /** Header values fixed by `specs/02-ape-schema.md` §2. */
 const HEADER_TYP = 'ape+jws';
-const APE_VERSION = '0.1';
+const APE_VERSIONS: readonly string[] = ['0.1', '0.2'];
+
+/** The event's `ape_version` (the header `ape` must match it), defaulting to 0.1. */
+function apeVersionOf(event: object): string {
+  const v = (event as { ape_version?: unknown }).ape_version;
+  return typeof v === 'string' && APE_VERSIONS.includes(v) ? v : '0.1';
+}
 
 export interface SourceKeyPair {
   privateJwk: JWK;
@@ -37,7 +43,7 @@ const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 export async function signEvent(event: object, privateJwk: JWK): Promise<string> {
   const key = await importJWK(privateJwk, 'EdDSA');
   const compact = await new CompactSign(encode(canonicalize(event)))
-    .setProtectedHeader({ alg: 'EdDSA', kid: sourceId(event), typ: HEADER_TYP, ape: APE_VERSION })
+    .setProtectedHeader({ alg: 'EdDSA', kid: sourceId(event), typ: HEADER_TYP, ape: apeVersionOf(event) })
     .sign(key);
   const [header, , signature] = compact.split('.');
   return `${header}..${signature}`;
@@ -56,7 +62,7 @@ export async function verifyEvent(event: object, sig: string, publicJwk: JWK): P
 
     return (
       protectedHeader.typ === HEADER_TYP &&
-      protectedHeader['ape'] === APE_VERSION &&
+      protectedHeader['ape'] === apeVersionOf(event) &&
       protectedHeader.kid === sourceId(event)
     );
   } catch {

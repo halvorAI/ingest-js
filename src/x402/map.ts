@@ -50,9 +50,10 @@ export interface MappedX402Event {
   /** Chosen by the mapper because some payment ids contain it, and so the authorized event can link to a request. */
   id?: string;
   type: string;
-  source: { adapter: X402Adapter };
+  source: { adapter: X402Adapter; perspective: 'payer' | 'payee' };
   agent?: { id: string };
-  owner?: { id: string; type: 'person' | 'business' };
+  owner?: X402Owner;
+  attribution_gaps?: { field: GapField; reason: GapReason }[];
   payment: Record<string, unknown>;
   payee: Record<string, unknown>;
   instrument?: Record<string, unknown>;
@@ -104,14 +105,43 @@ function amountOf(accept: X402Accept, override?: string): Record<string, unknown
  * Agent and owner for a mapped event. When the caller set them with `withAgentContext`, they are
  * left out so the client fills the full context (name, framework, country, …) at emit time.
  */
-function attribution(): Pick<MappedX402Event, 'agent' | 'owner'> {
+type GapField = 'owner' | 'agent' | 'instruction' | 'mandate';
+type GapReason = 'not_visible_to_observer' | 'not_provided';
+export type X402Owner = {
+  id: string;
+  type: 'person' | 'business' | 'unknown';
+  unknown_reason?: GapReason;
+};
+
+/**
+ * Who paid, as far as this side can tell (APE v0.2 §6.1.1). A seller sees a wallet, not the agent,
+ * its owner, the instruction or a mandate, so without an agent context it says those are not
+ * visible to it; a buyer without a context simply did not provide them. The payer wallet is never
+ * the agent id: it stays in `instrument.wallet`.
+ */
+function attribution(adapter: X402Adapter): Pick<MappedX402Event, 'agent' | 'owner' | 'attribution_gaps'> {
   const ctx = currentContext();
-  const out: Pick<MappedX402Event, 'agent' | 'owner'> = {};
-  // The payer wallet is never the agent id: it does not say which agent paid and would count the
-  // payment as attributed. It stays in `instrument.wallet`.
-  if (ctx?.agent === undefined) out.agent = { id: 'unattributed' };
-  if (ctx?.owner === undefined) out.owner = { id: 'unattributed', type: 'business' };
+  const reason: GapReason = adapter === 'x402-server' ? 'not_visible_to_observer' : 'not_provided';
+  const out: Pick<MappedX402Event, 'agent' | 'owner' | 'attribution_gaps'> = {};
+  const gaps: { field: GapField; reason: GapReason }[] = [];
+  if (ctx?.agent === undefined) {
+    out.agent = { id: 'unattributed' };
+    gaps.push({ field: 'agent', reason });
+  }
+  if (ctx?.owner === undefined) {
+    out.owner = { id: 'unattributed', type: 'unknown', unknown_reason: reason };
+    gaps.push({ field: 'owner', reason });
+  }
+  if (adapter === 'x402-server') {
+    if (ctx?.instruction === undefined) gaps.push({ field: 'instruction', reason });
+    gaps.push({ field: 'mandate', reason });
+  }
+  if (gaps.length > 0) out.attribution_gaps = gaps;
   return out;
+}
+
+function perspective(adapter: X402Adapter): 'payer' | 'payee' {
+  return adapter === 'x402-server' ? 'payee' : 'payer';
 }
 
 /**
@@ -166,7 +196,7 @@ export function mapPaymentRequired(
 ): MappedX402Event | undefined {
   const accept = required.accepts?.[0];
   if (accept === undefined) return undefined;
-  const attr = attribution();
+  const attr = attribution(adapter);
   // Each 402 challenge is its own payment request; the payer's nonce does not exist yet, so the
   // payment id is built from the event id (ape-schema MAPPINGS §5.1).
   const id = newId('evt');
@@ -183,7 +213,7 @@ export function mapPaymentRequired(
   return {
     id,
     type: 'payment.requested',
-    source: { adapter },
+    source: { adapter, perspective: perspective(adapter) },
     ...attr,
     payment,
     payee: payeeFromAccept(accept, required.resource, payeeOverride),
@@ -207,7 +237,7 @@ export function mapPaymentPayload(
   const nonce = auth?.nonce;
   const network = accept.network ?? 'unknown';
   const payer = auth?.from;
-  const attr = attribution();
+  const attr = attribution(adapter);
   const id = newId('evt');
   const payment: Record<string, unknown> = {
     payment_id: paymentIdFor(network, { nonce, eventId: id }),
@@ -223,7 +253,7 @@ export function mapPaymentPayload(
   const mapped: MappedX402Event = {
     id,
     type: 'payment.authorized',
-    source: { adapter },
+    source: { adapter, perspective: perspective(adapter) },
     ...attr,
     payment,
     payee: payeeFromAccept(accept, payload.resource, payeeOverride),
@@ -265,7 +295,7 @@ export function mapSettlementResponse(
     if (settlement.amount !== undefined) accept.amount = settlement.amount;
   }
   const network = settlement.network ?? accept.network ?? 'unknown';
-  const attr = attribution();
+  const attr = attribution(adapter);
   const id = newId('evt');
   const success = settlement.success === true;
   const payment: Record<string, unknown> = {
@@ -294,7 +324,7 @@ export function mapSettlementResponse(
   const mapped: MappedX402Event = {
     id,
     type: success ? 'payment.settled' : 'payment.failed',
-    source: { adapter },
+    source: { adapter, perspective: perspective(adapter) },
     ...attr,
     payment,
     payee: payeeFromAccept(accept, context.resource, context.payeeOverride),

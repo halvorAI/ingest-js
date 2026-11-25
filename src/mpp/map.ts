@@ -5,9 +5,10 @@ import type { MppChallenge, MppReceipt } from './types.js';
 export interface MappedMppEvent {
   type: string;
   occurred_at?: string;
-  source: { adapter: 'mpp-server' };
+  source: { adapter: 'mpp-server'; perspective: 'payee' };
   agent?: { id: string };
-  owner?: { id: string; type: 'person' | 'business' };
+  owner?: MppOwner;
+  attribution_gaps?: { field: MppGapField; reason: 'not_visible_to_observer' }[];
   payment: Record<string, unknown>;
   payee: Record<string, unknown>;
   evidence: {
@@ -29,11 +30,33 @@ function methodOf(raw: string): string {
  * Agent and owner for a mapped event. When the caller set them with `withAgentContext`, they are
  * left out so the client fills the full context (name, framework, country, …) at emit time.
  */
-function attribution(): Pick<MappedMppEvent, 'agent' | 'owner'> {
+type MppGapField = 'agent' | 'owner' | 'instruction' | 'mandate';
+type MppOwner = {
+  id: string;
+  type: 'person' | 'business' | 'unknown';
+  unknown_reason?: 'not_visible_to_observer';
+};
+
+/**
+ * The MPP server adapter sees the payment from the seller's side (APE v0.2 §6.1.1): without an agent
+ * context the agent, owner and instruction are not visible to it, and a mandate never is.
+ */
+function attribution(): Pick<MappedMppEvent, 'agent' | 'owner' | 'attribution_gaps'> {
   const ctx = currentContext();
-  const out: Pick<MappedMppEvent, 'agent' | 'owner'> = {};
-  if (ctx?.agent === undefined) out.agent = { id: 'unattributed' };
-  if (ctx?.owner === undefined) out.owner = { id: 'unattributed', type: 'business' };
+  const reason = 'not_visible_to_observer' as const;
+  const out: Pick<MappedMppEvent, 'agent' | 'owner' | 'attribution_gaps'> = {};
+  const gaps: { field: MppGapField; reason: typeof reason }[] = [];
+  if (ctx?.agent === undefined) {
+    out.agent = { id: 'unattributed' };
+    gaps.push({ field: 'agent', reason });
+  }
+  if (ctx?.owner === undefined) {
+    out.owner = { id: 'unattributed', type: 'unknown', unknown_reason: reason };
+    gaps.push({ field: 'owner', reason });
+  }
+  if (ctx?.instruction === undefined) gaps.push({ field: 'instruction', reason });
+  gaps.push({ field: 'mandate', reason });
+  out.attribution_gaps = gaps;
   return out;
 }
 
@@ -99,7 +122,7 @@ export function mapMppChallenge(challenge: MppChallenge): MappedMppEvent {
   }
   const mapped: MappedMppEvent = {
     type: 'payment.requested',
-    source: { adapter: 'mpp-server' },
+    source: { adapter: 'mpp-server', perspective: 'payee' },
     ...attr,
     payment,
     payee: payeeFromChallenge(challenge),
@@ -138,7 +161,7 @@ export function mapMppReceipt(receipt: MppReceipt, challenge?: MppChallenge): Ma
   const evidenceValue = receipt as unknown as Record<string, unknown>;
   const mapped: MappedMppEvent = {
     type: 'payment.settled',
-    source: { adapter: 'mpp-server' },
+    source: { adapter: 'mpp-server', perspective: 'payee' },
     ...attr,
     payment: {
       payment_id: paymentId,

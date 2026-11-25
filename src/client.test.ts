@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HalvorClient, type ClientOptions, type SdkError } from './client.js';
 import { withAgentContext } from './context.js';
+import { hashInstruction } from './hash.js';
 
 const SOURCE_ID = 'src_01TESTSOURCE0000000000000A';
 let privateJwk: JWK;
@@ -126,7 +127,12 @@ async function advanceUntil(job: Promise<unknown>, totalMs: number): Promise<voi
 describe('emit: building the event', () => {
   it('returns an id synchronously and sends a complete, signed, valid event', async () => {
     const { client, srv, errors } = makeClient();
-    const id = client.emit(base);
+    // A fully attributed event uses no v0.2 field, so it stays APE v0.1.
+    const id = client.emit({
+      ...base,
+      agent: { id: 'agt_1' },
+      owner: { id: 'own_1', type: 'business' },
+    });
     expect(id).toMatch(/^evt_[0-9A-Z]{26}$/);
     await client.flush();
 
@@ -231,7 +237,12 @@ describe('emit: building the event', () => {
     await client.flush();
     const event = allSent(srv)[0]?.event;
     expect(event?.['agent']).toEqual({ id: 'unattributed' });
-    expect(event?.['owner']).toEqual({ id: 'unattributed', type: 'business' });
+    expect(event?.['owner']).toEqual({
+      id: 'unattributed',
+      type: 'unknown',
+      unknown_reason: 'not_provided',
+    });
+    expect(event?.['ape_version']).toBe('0.2');
     expect(errors).toEqual([]);
   });
 
@@ -845,34 +856,82 @@ describe('card numbers in payee URLs and label keys', () => {
   });
 });
 
-describe('unknown owner (halvorAI/halvorai-app#99)', () => {
-  const sendOne = async (input: Record<string, unknown>) => {
-    const { client, srv } = makeClient();
-    client.emit(input);
+describe('APE v0.2 (halvorAI/halvorai-app#99, #100, #109)', () => {
+  const sendOne = async (input: Record<string, unknown>, emitReport = false) => {
+    const { client, srv, errors } = makeClient();
+    if (emitReport) client.emitReport(input as Parameters<typeof client.emitReport>[0]);
+    else client.emit(input);
     await client.flush();
-    return allSent(srv)[0]?.event;
+    expect(errors).toEqual([]);
+    return allSent(srv)[0];
   };
 
-  it('labels an event whose owner is unattributed, since the type is only a placeholder', async () => {
-    const event = await sendOne(base);
-    expect(event?.owner).toEqual({ id: 'unattributed', type: 'business' });
-    expect(event?.labels).toMatchObject({ owner_type: 'unknown' });
+  it('says an unknown owner is unknown, with no label stopgap', async () => {
+    const item = await sendOne(base);
+    expect(item?.event['owner']).toEqual({
+      id: 'unattributed',
+      type: 'unknown',
+      unknown_reason: 'not_provided',
+    });
+    expect(item?.event['labels']).toBeUndefined();
+    expect(item?.event['ape_version']).toBe('0.2');
+    expect(await verifyEvent(item?.event ?? {}, item?.sig ?? '', publicJwk)).toBe(true);
   });
 
-  it('labels an adapter event that passes the unattributed owner itself', async () => {
-    const event = await sendOne({ ...base, owner: { id: 'unattributed', type: 'business' } });
-    expect(event?.labels).toMatchObject({ owner_type: 'unknown' });
+  it('keeps v0.1 for an event that uses no v0.2 field', async () => {
+    const item = await sendOne({
+      ...base,
+      agent: { id: 'agt_1' },
+      owner: { id: 'own_real', type: 'person' },
+    });
+    expect(item?.event['ape_version']).toBe('0.1');
   });
 
-  it('does not label an event with a real owner', async () => {
-    const event = await sendOne({ ...base, owner: { id: 'own_real', type: 'person' } });
-    expect(event?.labels?.['owner_type']).toBeUndefined();
+  it('passes v0.2 payment and top-level fields through', async () => {
+    const item = await sendOne({
+      ...base,
+      agent: { id: 'agt_1' },
+      owner: { id: 'own_1', type: 'person' },
+      source: { perspective: 'payer' },
+      payment: { ...payment, checkout_digest: 'Xk3h2m8QpL0vN7rT4yW1zA6bC9dE5fG2hJ8kM3nP0qR' },
+      delivery: { http_status: 200, summary: '10 of 12 results' },
+      attribution_gaps: [{ field: 'mandate', reason: 'not_provided' }],
+    });
+    expect(item?.event).toMatchObject({
+      ape_version: '0.2',
+      source: { perspective: 'payer', adapter: 'custom' },
+      delivery: { http_status: 200 },
+      attribution_gaps: [{ field: 'mandate', reason: 'not_provided' }],
+    });
+    expect(ApeEventSchema.safeParse(item?.event).success).toBe(true);
   });
 
-  it('keeps the labels the caller set, and does not overwrite their owner_type', async () => {
-    const mixed = await sendOne({ ...base, labels: { team: 'growth' } });
-    expect(mixed?.labels).toEqual({ team: 'growth', owner_type: 'unknown' });
-    const own = await sendOne({ ...base, labels: { owner_type: 'person' } });
-    expect(own?.labels).toEqual({ owner_type: 'person' });
+  it('adds a normalised instruction hash on request', async () => {
+    const item = await sendOne({
+      ...base,
+      instruction: { id: 'ins_1', text: 'Buy it from http://localhost:8123/pay', normalise: true },
+    });
+    const ins = item?.event['instruction'] as Record<string, string>;
+    expect(ins['normalisation']).toBe('ws-lower-v1');
+    expect(ins['normalised_hash']).toBe(hashInstruction('buy it from /pay'));
+    expect(ins['hash']).toBe(hashInstruction('Buy it from http://localhost:8123/pay'));
+  });
+
+  it('emits an agent report with the message hashed and no payment', async () => {
+    const item = await sendOne(
+      {
+        instruction: { id: 'ins_1', text: 'Buy one export' },
+        report: { body: 'Done, paid once.', payments_claimed: 1, summary: 'Paid once.' },
+      },
+      true,
+    );
+    expect(item?.event).toMatchObject({
+      ape_version: '0.2',
+      type: 'agent.reported',
+      report: { payments_claimed: 1, body_sha256: hashInstruction('Done, paid once.') },
+    });
+    expect(item?.event['payment']).toBeUndefined();
+    expect(JSON.stringify(item?.event)).not.toContain('Done, paid once.');
+    expect(await verifyEvent(item?.event ?? {}, item?.sig ?? '', publicJwk)).toBe(true);
   });
 });

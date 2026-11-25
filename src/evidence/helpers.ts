@@ -1,9 +1,16 @@
+import { createHash } from 'node:crypto';
 import { evidenceSha256 } from '@halvorai/schema';
 
 /** Evidence item ready for `halvor.emit({ …, evidence: […] })`. */
 export interface PackagedEvidence {
-  kind: 'ap2.payment_mandate' | 'ap2.checkout_mandate' | 'vi.chain' | 'tap.signature';
-  format: 'sd-jwt' | 'kb-sd-jwt' | 'http-signature';
+  kind:
+    | 'ap2.payment_mandate'
+    | 'ap2.checkout_mandate'
+    | 'vi.chain'
+    | 'tap.signature'
+    | 'tool.response'
+    | 'chain.receipt';
+  format: 'sd-jwt' | 'kb-sd-jwt' | 'http-signature' | 'json';
   value: string | Record<string, unknown>;
   sha256: `sha256:${string}`;
 }
@@ -108,5 +115,53 @@ export const tap = {
       value,
       sha256: evidenceSha256(value),
     };
+  },
+};
+
+/**
+ * APE v0.2 `tool.response`: what a tool showed the agent (a "payment failed", a balance read).
+ * The body is hashed exactly as shown; it is sent only with `includeBody: true`, since tool replies
+ * can hold personal data. The SDK still redacts card numbers and secrets from it.
+ */
+export const tool = {
+  response(input: {
+    tool: string;
+    body: string;
+    callId?: string;
+    at?: string;
+    contentType?: string;
+    includeBody?: boolean;
+  }): PackagedEvidence {
+    const value: Record<string, unknown> = {
+      tool: input.tool,
+      body_sha256: `sha256:${createHash('sha256').update(input.body, 'utf8').digest('hex')}`,
+    };
+    if (input.callId !== undefined) value['call_id'] = input.callId;
+    if (input.at !== undefined) value['at'] = input.at;
+    if (input.contentType !== undefined) value['content_type'] = input.contentType;
+    if (input.includeBody === true) value['body'] = input.body;
+    return { kind: 'tool.response', format: 'json', value, sha256: evidenceSha256(value) };
+  },
+};
+
+/** APE v0.2 `chain.receipt`: an on-chain receipt as the producer read it from the chain. */
+export const chain = {
+  receipt(input: {
+    network: string;
+    txHash: string;
+    blockNumber: number;
+    logIndex?: number;
+    submitter?: string;
+    status?: 'success' | 'reverted';
+  }): PackagedEvidence {
+    const value: Record<string, unknown> = {
+      network: input.network,
+      tx_hash: input.txHash,
+      block_number: input.blockNumber,
+    };
+    if (input.logIndex !== undefined) value['log_index'] = input.logIndex;
+    if (input.submitter !== undefined) value['submitter'] = input.submitter;
+    if (input.status !== undefined) value['status'] = input.status;
+    return { kind: 'chain.receipt', format: 'json', value, sha256: evidenceSha256(value) };
   },
 };

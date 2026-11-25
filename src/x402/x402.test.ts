@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ApeEventSchema, generateSourceKeyPair, type JWK } from '@halvorai/schema';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { withAgentContext } from '../context.js';
 import { HalvorClient } from '../client.js';
 import { withHalvor } from './client.js';
 import { encodePaymentHeader } from './decode.js';
@@ -391,7 +392,11 @@ describe('x402 data quality (JS-6, JS-7, payment ids)', () => {
       'x402-client',
     );
     expect(mapped?.agent).toEqual({ id: 'unattributed' });
-    expect(mapped?.owner).toEqual({ id: 'unattributed', type: 'business' });
+    expect(mapped?.owner).toEqual({
+      id: 'unattributed',
+      type: 'unknown',
+      unknown_reason: 'not_provided',
+    });
     expect(mapped?.instrument).toMatchObject({ wallet: { address: '0xpayer' } });
   });
 
@@ -474,5 +479,47 @@ describe('payment ids without a nonce (halvorAI/halvorai-app#98)', () => {
     expect(String(mapped?.payment['payment_id'])).not.toMatch(/:unknown$/);
     expect(mapped?.payment['payment_id']).toBe(`x402:eip155:84532:event:${mapped?.id}`);
     expect(mapped?.payment['rail_ref']).not.toHaveProperty('nonce');
+  });
+});
+
+describe('APE v0.2 from the x402 adapters (halvorAI/halvorai-app#100)', () => {
+  const accept02 = { scheme: 'exact', network: 'eip155:8453', asset: '0xabc', amount: '10000' };
+  const payload02 = {
+    accepted: accept02,
+    payload: { authorization: { from: '0xpayer', nonce: '0x02', value: '10000' } },
+  };
+
+  it('a seller with no agent context says what it cannot see', () => {
+    const mapped = mapPaymentPayload(payload02, 'x402-server');
+    expect(mapped?.source).toEqual({ adapter: 'x402-server', perspective: 'payee' });
+    expect(mapped?.owner).toEqual({
+      id: 'unattributed',
+      type: 'unknown',
+      unknown_reason: 'not_visible_to_observer',
+    });
+    expect(mapped?.attribution_gaps).toEqual([
+      { field: 'agent', reason: 'not_visible_to_observer' },
+      { field: 'owner', reason: 'not_visible_to_observer' },
+      { field: 'instruction', reason: 'not_visible_to_observer' },
+      { field: 'mandate', reason: 'not_visible_to_observer' },
+    ]);
+  });
+
+  it('a buyer with no context did not provide them', () => {
+    const mapped = mapPaymentPayload(payload02, 'x402-client');
+    expect(mapped?.source).toEqual({ adapter: 'x402-client', perspective: 'payer' });
+    expect(mapped?.attribution_gaps).toEqual([
+      { field: 'agent', reason: 'not_provided' },
+      { field: 'owner', reason: 'not_provided' },
+    ]);
+  });
+
+  it('a buyer with a context has no gaps, and the client fills agent and owner', () => {
+    const mapped = withAgentContext(
+      { agent: { id: 'agt_ctx' }, owner: { id: 'own_ctx', type: 'person' } },
+      () => mapPaymentPayload(payload02, 'x402-client'),
+    );
+    expect(mapped?.attribution_gaps).toBeUndefined();
+    expect(mapped?.owner).toBeUndefined();
   });
 });
